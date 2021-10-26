@@ -64,3 +64,12 @@ python_test(
         "//third_party/python:requests",
     ],
 )
+
+python_test(
+    name = "pytest_test",
+    srcs = ["pytest_test.py"],
+    # deps = [
+    #     "//third_party/python:pytest",
+    # ],
+    test_runner = "pytest",
+)
