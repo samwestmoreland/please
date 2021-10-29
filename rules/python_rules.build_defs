@@ -240,6 +240,7 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
     if test_runner == "pytest":
         deps = [
                 "//rules:pytest_deps",
+                "//third_party/python:pytest",
                 "//third_party/python:py",
                 "//third_party/python:pluggy",
                 "//third_party/python:attrs",
@@ -253,6 +254,7 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
 
         dep_locations = [
                 "$(location //rules:pytest_deps)",
+                "$(location //third_party/python:pytest)",
                 "$(location //third_party/python:py)",
                 "$(location //third_party/python:pluggy)",
                 "$(location //third_party/python:attrs)",
