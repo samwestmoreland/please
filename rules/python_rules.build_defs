@@ -234,8 +234,41 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
                          `unittest`, `pytest`, or a custom test runner entry point.
     """
     test_runner = test_runner or CONFIG.PYTHON_TEST_RUNNER
-    cmd = '$TOOLS_PEX -t -s "%s" -m "%s" -r "%s" --zip_safe --add_test_runner_deps --interpreter_options="%s" --stamp="$RULE_HASH"' % (
-        _interpreter_cmd(interpreter), CONFIG.PYTHON_MODULE_DIR, test_runner,
+
+    dep_locations = None
+
+    if test_runner == "pytest":
+        deps = [
+                "//rules:pytest_deps",
+                "//third_party/python:py",
+                "//third_party/python:pluggy",
+                "//third_party/python:attrs",
+                "//third_party/python:funcsigs",
+                "//third_party/python:more_itertools",
+                "//third_party/python:packaging",
+                "//third_party/python:pkg_resources",
+                "//third_party/python:importlib_metadata",
+                "//third_party/python:zipp",
+                ]
+
+        dep_locations = [
+                "$(location //rules:pytest_deps)",
+                "$(location //third_party/python:py)",
+                "$(location //third_party/python:pluggy)",
+                "$(location //third_party/python:attrs)",
+                "$(location //third_party/python:funcsigs)",
+                "$(location //third_party/python:more_itertools)",
+                "$(location //third_party/python:packaging)",
+                "$(location //third_party/python:pkg_resources)",
+                "$(location //third_party/python:importlib_metadata)",
+                "$(location //third_party/python:zipp)"
+                ]
+
+        dep_locations = " ".join([f"--dependencies={dep_location}" for dep_location in dep_locations])
+
+    cmd = '$TOOLS_PEX -t -s "%s" -m "%s" -r "%s" %s --zip_safe --add_test_runner_deps --interpreter_options="%s" --stamp="$RULE_HASH"' % (
+    # cmd = '$TOOLS_PEX -t -s "%s" -m "%s" -r "%s" --zip_safe --add_test_runner_deps --interpreter_options="%s" --stamp="$RULE_HASH"' % (
+        _interpreter_cmd(interpreter), CONFIG.PYTHON_MODULE_DIR, test_runner, dep_locations,
         CONFIG.PYTHON_INTERPRETER_OPTIONS)
     if site:
         cmd += ' -S'

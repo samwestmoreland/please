@@ -17,3 +17,26 @@ go_test(
         "//third_party/go:testify",
     ],
 )
+
+# filegroup(
+#     name = "pytest_deps",
+#     visibility = ["PUBLIC"],
+#     srcs = [
+#         "pytest.py",
+#         "//third_party/python:py",
+#         "//third_party/python:pluggy",
+#         "//third_party/python:attrs",
+#         "//third_party/python:funcsigs",
+#         "//third_party/python:more_itertools",
+#         "//third_party/python:packaging",
+#         "//third_party/python:pkg_resources",
+#         "//third_party/python:importlib_metadata",
+#         "//third_party/python:zipp",
+#     ],
+# )
+
+filegroup(
+    name = "pytest_deps",
+    visibility = ["PUBLIC"],
+    srcs = ["pytest.py"],
+)

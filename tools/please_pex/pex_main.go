@@ -26,6 +26,7 @@ var opts = struct {
 	Site               bool          `short:"S" long:"site" description:"Allow the pex to import site at startup"`
 	ZipSafe            bool          `long:"zip_safe" description:"Marks this pex as zip-safe"`
 	AddTestRunnerDeps  bool          `long:"add_test_runner_deps" description:"True if test-runner dependencies should be baked into test binaries"`
+	Dependencies       []string      `long:"dependencies" description:"List of dependencies"`
 }{
 	Usage: `
 please_pex is a tool to create .pex files for Python.
@@ -46,7 +47,7 @@ func main() {
 		w.SetShebang(opts.Shebang, opts.InterpreterOptions)
 	}
 	if opts.Test {
-		w.SetTest(opts.TestSrcs, opts.TestRunner, opts.AddTestRunnerDeps)
+		w.SetTest(opts.TestSrcs, opts.TestRunner, opts.AddTestRunnerDeps, opts.Dependencies)
 	}
 	if err := w.Write(opts.Out, opts.ModuleDir); err != nil {
 		log.Fatalf("%s", err)

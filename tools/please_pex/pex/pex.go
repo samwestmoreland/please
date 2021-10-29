@@ -66,58 +66,54 @@ func (pw *Writer) SetShebang(shebang string, options string) {
 
 // SetTest sets this Writer to write tests using the given sources.
 // This overrides the entry point given earlier.
-func (pw *Writer) SetTest(srcs []string, testRunner string, addTestRunnerDeps bool) {
+func (pw *Writer) SetTest(srcs []string, testRunner string, addTestRunnerDeps bool, deps []string) {
+	fmt.Printf("deps=%v\n", deps)
+	fmt.Printf("addTestRunnerDeps=%v\n", addTestRunnerDeps)
+	fmt.Printf("testRunner=%v\n", testRunner)
 	pw.realEntryPoint = "test_main"
 	pw.testSrcs = srcs
 
+	// These are the testrunner-agnostic dependencies
 	testRunnerDeps := []string{
 		".bootstrap/coverage",
 		".bootstrap/__init__.py",
 		".bootstrap/six.py",
 	}
 
-	switch testRunner {
-	case "pytest":
-		// We only need xmlrunner for unittest, the equivalent is builtin to pytest.
-		testRunnerDeps = append(testRunnerDeps,
-			".bootstrap/pytest.py",
-			".bootstrap/_pytest",
-			".bootstrap/py",
-			".bootstrap/pluggy",
-			".bootstrap/attr",
-			".bootstrap/funcsigs",
-			".bootstrap/more_itertools",
-			".bootstrap/packaging",
-			".bootstrap/pkg_resources",
-			".bootstrap/importlib_metadata",
-			".bootstrap/zipp",
-		)
-		pw.testRunner = "pytest.py"
-	case "behave":
-		testRunnerDeps = append(testRunnerDeps,
-			".bootstrap/behave",
-			".bootstrap/parse.py",
-			".bootstrap/parse_type",
-			".bootstrap/traceback2",
-			".bootstrap/enum",
-			".bootstrap/win_unicode_console",
-			".bootstrap/colorama",
-		)
-		pw.testRunner = "behave.py"
-	case "unittest":
-		testRunnerDeps = append(testRunnerDeps, ".bootstrap/xmlrunner")
-		pw.testRunner = "unittest.py"
-	default:
-		if !strings.ContainsRune(testRunner, '.') {
-			panic("Custom test runner '" + testRunner + "' is invalid; must contain at least one dot")
-		}
-		pw.testRunner = "custom.py"
-		pw.customTestRunner = testRunner
-	}
+	testRunnerDeps = append(testRunnerDeps, deps...)
+
+	// switch testRunner {
+	// case "pytest":
+	// 	// We only need xmlrunner for unittest, the equivalent is builtin to pytest.
+	// 	testRunnerDeps = append(testRunnerDeps, deps...)
+	// 	pw.testRunner = "pytest.py"
+	// case "behave":
+	// 	testRunnerDeps = append(testRunnerDeps,
+	// 		".bootstrap/behave",
+	// 		".bootstrap/parse.py",
+	// 		".bootstrap/parse_type",
+	// 		".bootstrap/traceback2",
+	// 		".bootstrap/enum",
+	// 		".bootstrap/win_unicode_console",
+	// 		".bootstrap/colorama",
+	// 	)
+	// 	pw.testRunner = "behave.py"
+	// case "unittest":
+	// 	testRunnerDeps = append(testRunnerDeps, ".bootstrap/xmlrunner")
+	// 	pw.testRunner = "unittest.py"
+	// default:
+	// 	if !strings.ContainsRune(testRunner, '.') {
+	// 		panic("Custom test runner '" + testRunner + "' is invalid; must contain at least one dot")
+	// 	}
+	// 	pw.testRunner = "custom.py"
+	// 	pw.customTestRunner = testRunner
+	// }
 
 	if addTestRunnerDeps {
 		pw.includeLibs = testRunnerDeps
 	}
+
+	fmt.Printf("includeLibs=%v", pw.includeLibs)
 }
 
 // Write writes the pex to the given output file.
@@ -162,7 +158,9 @@ func (pw *Writer) Write(out, moduleDir string) error {
 		b2 = bytes.Replace(b2, []byte("__TEST_NAMES__"), []byte(strings.Join(pw.testSrcs, ",")), 1)
 		b = append(b, b2...)
 		// It also needs an appropriate test runner.
-		b = append(b, bytes.Replace(mustRead(pw.testRunner), []byte("__TEST_RUNNER__"), []byte(pw.customTestRunner), 1)...)
+		if pw.testRunner != "" {
+			b = append(b, bytes.Replace(mustRead(pw.testRunner), []byte("__TEST_RUNNER__"), []byte(pw.customTestRunner), 1)...)
+		}
 	}
 	// We always append the final if __name__ == '__main__' bit.
 	b = append(b, mustRead("pex_run.py")...)
