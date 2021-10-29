@@ -254,19 +254,8 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
 
         deps.extend(pytest_deps)
 
-        dep_locations = [
-                "$(location //rules:pytest_deps)",
-                "$(location //third_party/python:pytest)",
-                "$(location //third_party/python:py)",
-                "$(location //third_party/python:pluggy)",
-                "$(location //third_party/python:attrs)",
-                "$(location //third_party/python:funcsigs)",
-                "$(location //third_party/python:more_itertools)",
-                "$(location //third_party/python:packaging)",
-                "$(location //third_party/python:pkg_resources)",
-                "$(location //third_party/python:importlib_metadata)",
-                "$(location //third_party/python:zipp)"
-                ]
+        for dep in pytest_deps:
+            dep_locations.append("\"$(location " + dep + ")\"")
 
     dep_locations = " ".join([f"--dependencies={dep_location}" for dep_location in dep_locations]) if not None else ""
 
