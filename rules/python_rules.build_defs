@@ -238,7 +238,7 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
     dep_locations = []
 
     if test_runner == "pytest":
-        deps = [
+        pytest_deps = [
                 "//rules:pytest_deps",
                 "//third_party/python:pytest",
                 "//third_party/python:py",
@@ -251,6 +251,8 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
                 "//third_party/python:importlib_metadata",
                 "//third_party/python:zipp",
                 ]
+
+        deps.extend(pytest_deps)
 
         dep_locations = [
                 "$(location //rules:pytest_deps)",
