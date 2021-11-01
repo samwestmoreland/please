@@ -87,16 +87,16 @@ func (pw *Writer) SetTest(srcs []string, testRunner string, addTestRunnerDeps bo
 		// We only need xmlrunner for unittest, the equivalent is builtin to pytest.
 		pw.testRunner = "pytest.py"
 	case "behave":
-		testRunnerDeps = append(testRunnerDeps,
-			".bootstrap/behave",
-			".bootstrap/parse.py",
-			".bootstrap/parse_type",
-			".bootstrap/traceback2",
-			".bootstrap/enum",
-			".bootstrap/win_unicode_console",
-			".bootstrap/colorama",
-		)
-		pw.testRunner = "behave.py"
+		// testRunnerDeps = append(testRunnerDeps,
+		// 	".bootstrap/behave",
+		// 	".bootstrap/parse.py",
+		// 	".bootstrap/parse_type",
+		// 	".bootstrap/traceback2",
+		// 	".bootstrap/enum",
+		// 	".bootstrap/win_unicode_console",
+		// 	".bootstrap/colorama",
+		// )
+		// pw.testRunner = "behave.py"
 	case "unittest":
 		testRunnerDeps = append(testRunnerDeps, ".bootstrap/xmlrunner")
 		pw.testRunner = "unittest.py"
