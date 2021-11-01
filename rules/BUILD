@@ -20,7 +20,7 @@ go_test(
 
 filegroup(
     name = "pytest_deps",
-    visibility = ["//rules/..."],
+    visibility = ["PUBLIC"],
     srcs = [
         "pytest.py",
         # "//third_party/python:pytest",
@@ -38,16 +38,16 @@ filegroup(
 
 filegroup(
     name = "behave_deps",
-    visibility = ["//rules/..."],
+    visibility = ["PUBLIC"],
     srcs = [
         "behave.py",
-        "//third_party/parse",
+        "//third_party/python:parse",
         #"//third_party/parse.py", # this was the original
-        "//third_party/behave",
-        "//third_party/parse_type",
-        "//third_party/traceback2",
-        "//third_party/enum",
-        "//third_party/win_unicode_console",
-        "//third_party/colorama",
+        "//third_party/python:behave",
+        "//third_party/python:parse_type",
+        "//third_party/python:traceback2",
+        "//third_party/python:enum34",
+        "//third_party/python:win_unicode_console",
+        "//third_party/python:colorama",
     ],
 )

@@ -238,6 +238,9 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
     if test_runner == "pytest":
         pytest_deps = ["//rules:pytest_deps"]
         deps.extend(pytest_deps)
+    elif test_runner == "behave":
+        behave_deps = ["//rules:behave_deps"]
+        deps.extend(behave_deps)
 
     dep_locations = " ".join([f"--dep=\"$({dep})\"" for dep in deps]) if not None else ""
 
