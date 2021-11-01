@@ -26,7 +26,7 @@ var opts = struct {
 	Site               bool          `short:"S" long:"site" description:"Allow the pex to import site at startup"`
 	ZipSafe            bool          `long:"zip_safe" description:"Marks this pex as zip-safe"`
 	AddTestRunnerDeps  bool          `long:"add_test_runner_deps" description:"True if test-runner dependencies should be baked into test binaries"`
-	Dependency         []string      `long:"dep" description:"Dependencies"`
+	Dependencies       []string      `long:"dep" description:"Dependencies"`
 }{
 	Usage: `
 please_pex is a tool to create .pex files for Python.

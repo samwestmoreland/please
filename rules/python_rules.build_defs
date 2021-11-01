@@ -254,10 +254,7 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
 
         deps.extend(pytest_deps)
 
-        for dep in pytest_deps:
-            dep_locations.append("\"$(location " + dep + ")\"")
-
-    dep_locations = " ".join([f"--dependencies={dep_location}" for dep_location in dep_locations]) if not None else ""
+    dep_locations = " ".join([f"--dep=\"$({dep})\"" for dep in deps]) if not None else ""
 
     cmd = '$TOOLS_PEX -t -s "%s" -m "%s" -r "%s" %s --zip_safe --add_test_runner_deps --interpreter_options="%s" --stamp="$RULE_HASH"' % (
     # cmd = '$TOOLS_PEX -t -s "%s" -m "%s" -r "%s" --zip_safe --add_test_runner_deps --interpreter_options="%s" --stamp="$RULE_HASH"' % (
