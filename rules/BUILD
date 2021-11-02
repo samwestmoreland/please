@@ -17,3 +17,9 @@ go_test(
         "//third_party/go:testify",
     ],
 )
+
+filegroup(
+    name = "run_test_pytest",
+    srcs = ["pytest.py",],
+    visibility = ["PUBLIC"],
+)

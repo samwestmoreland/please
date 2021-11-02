@@ -192,6 +192,19 @@ def python_binary(name:str, main:str, srcs:list=[], resources:list=[], out:str=N
         test_only=test_only,
     )
 
+pytest_deps = [
+        "//rules:run_test_pytest",
+        # "//third_party/python:pytest",
+        # "//third_party/python:py",
+        # "//third_party/python:pluggy",
+        # "//third_party/python:attrs",
+        # "//third_party/python:funcsigs",
+        # "//third_party/python:more_itertools",
+        # "//third_party/python:packaging",
+        # # "//third_party/python:pkg_resources",
+        # "//third_party/python:importlib_metadata",
+        # "//third_party/python:zipp",
+        ]
 
 def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:list=[], worker:str='',
                 labels:list&features&tags=[], size:str=None, flags:str='', visibility:list=None,
@@ -239,6 +252,9 @@ def python_test(name:str, srcs:list, data:list|dict=[], resources:list=[], deps:
         CONFIG.PYTHON_INTERPRETER_OPTIONS)
     if site:
         cmd += ' -S'
+
+    if test_runner == "pytest":
+        deps.extend(pytest_deps)
 
     # If the config specifies a PYTHON_TEST_RUNNER_BOOTSTRAP target, then this ought to contain
     # the test-runner library (e.g. pytest), and its transitive dependencies. In this case, we just
