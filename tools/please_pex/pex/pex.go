@@ -94,19 +94,7 @@ func (pw *Writer) SetTest(srcs []string, testRunner string, addTestRunnerDeps bo
 	switch testRunner {
 	case "pytest":
 		// We only need xmlrunner for unittest, the equivalent is builtin to pytest.
-		testRunnerDeps = append(testRunnerDeps,
-			".bootstrap/pytest.py",
-			".bootstrap/_pytest",
-			".bootstrap/py",
-			".bootstrap/pluggy",
-			".bootstrap/attr",
-			".bootstrap/funcsigs",
-			".bootstrap/more_itertools",
-			".bootstrap/packaging",
-			".bootstrap/pkg_resources",
-			".bootstrap/importlib_metadata",
-			".bootstrap/zipp",
-		)
+		testRunnerDeps = append(testRunnerDeps)
 		pw.testRunner = filepath.Join(testRunnersDir, "pytest.py")
 	case "behave":
 		testRunnerDeps = append(testRunnerDeps,
