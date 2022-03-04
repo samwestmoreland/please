@@ -15,10 +15,9 @@ Duration: 4
 - You must have Please installed: [Install please](https://please.build/quickstart.html)
 
 ### What You’ll Learn
-- How to hook an existing plugin up to Please
-- How to configure the plugin
+- How to write your own custom plugin for use with Please
 
-### what if I get stuck?
+### What if I get stuck?
 
 The final result of running through this codelab can be found
 [here](https://github.com/thought-machine/please-codelabs/tree/main/getting_started_python) for reference. If you really
@@ -28,162 +27,87 @@ get stuck you can find us on [gitter](https://gitter.im/please-build/Lobby)!
 Duration: 2
 
 Let's create a new project:
-```
-$ mkdir getting_started_python && cd getting_started_python
+```shell
+$ mkdir my_plz_plugin && cd my_plz_plugin
 $ plz init --no_prompt
 ```
 
-### A note about your Please PATH
-Please doesn't use your host system's `PATH` variable. By default, Please uses `/usr/local/bin:/usr/bin:/bin`. If Python
-isn't in this path, you will need to add the following to `.plzconfig`:
-```
-[build]
-path = $YOUR_PYTHON_INSTALL_HERE:/usr/local/bin:/usr/bin:/bin
-```
-
-### So what just happened?
-You will see this has created a number of files in your working folder:
-```
-$ tree -a
-  .
-  ├── pleasew
-  └── .plzconfig
-```
-
-The `pleasew` script is a wrapper script that will automatically install Please if it's not already! This
-means Please projects are portable and can always be built via
-`git clone https://... example_module && cd example_module && ./pleasew build`.
-
-Finally, `.plzconfig` contains the project configuration for Please; read the [config](/config.html) documentation for
-more information on configuration.
-
-## Hello, world!
+## Setting up your config file
 Duration: 3
 
-Now we have a Please project, it's time to start adding some code to it! Let's create a "hello world" program:
+We now have an initialised Please repo. Let's set the config file up so that `plz` will know that this is a plugin repo:
 
-### `src/main.py`
-```python
-print('Hello, world!')
+### `.plzconfig`
+```ini
+[PluginDefinition]
+name = fooplug
 ```
+Once we've done that, we can add our plugin-specific config values that will allow any users of our plugin to configure the plugin as they need.
 
-We now need to tell Please about our Python code. Please projects define metadata about the targets that are available to be
-built in `BUILD` files. Let's create a `BUILD` file to build this program:
+### `.plzconfig`
+```ini
+[PluginConfig "hash_function"]
+ConfigKey = HashFunction
+DefaultValue = SHA256
+Optional = false
+```
+The ConfigKey can be set or not. If we choose not to specify it, it will be inferred from the section title (e.g. `hash_function` implies `HashFunction`).
 
-### `src/BUILD`
+## Writing a new build definition
+Duration: 3
+
+Now let's add a simple build definition. For more information on writing custom build definitions, have a look at the ['Custom build rules with genrule()'](https://please.build/codelabs/genrule/) codelab.
+
+### `./build_defs/foolang.build_defs`
 ```python
-python_binary(
-  name = "main",
-  main = "main.py",
+def hash_file(name:str, file:str) -> str:
+    return genrule(
+        name = name,
+        srcs = [file],
+        outs = [f'{name}.hash'],
+        cmd = 'sha1sum $SRC > $OUT',
+    )
+```
+We can then expose the build definition using a filegroup like so:
+### `build_defs/BUILD`
+```python
+# Expose our foolang build_defs
+filegroup(
+    name = "foolang",
+    srcs = ["foolang.build_defs"],
+    visibility = ["PUBLIC"],
 )
 ```
 
-That's it! You can now run this with:
+## Testing our plugin
+To test our new build definition, we'll create a dummy file:
+### `test/somefile.foo`
 ```
-$ plz run //src:main
-Hello, world!
+foo
+bar
+baz
 ```
 
-There's a lot going on here; first off, `python_binary()` is one of many [built-in functions](/lexicon.html#python).
-This build function creates a "build target" in the `src` package. A package, in the Please sense, is any directory that
-contains a `BUILD` file.
-
-Each build target can be identified by a build label in the format `//path/to/package:label`, i.e. `//src:main`.
-There are a number of things you can do with a build target such e.g. `plz build //src:main`, however, as you've seen,
-if the target is a binary, you may run it with `plz run`.
-
-## Adding modules
-Duration: 4
-
-Let's add a `src/greetings` package to our Python project:
-
-### `src/greetings/greetings.py`
+### `test/BUILD`
 ```python
-import random
+subinclude("//build_defs:foolang)
 
-def greeting():
-    return random.choice(["Hello", "Bonjour", "Marhabaan"])
-```
-
-We then need to tell Please how to compile this library:
-
-### `src/greetings/BUILD`
-```python
-python_library(
-    name = "greetings",
-    srcs = ["greetings.py"],
-    visibility = ["//src/..."],
-)
-```
-NB: Unlike many popular build systems, Please doesn't just have one metadata file in the root of the project. Please will
-typically have one `BUILD` file per [Python package](https://docs.python.org/3/tutorial/modules.html#packages).
-
-We can then build it like so:
-
-```
-$ plz build //src/greetings
-Build finished; total time 290ms, incrementality 50.0%. Outputs:
-//src/greetings:greetings:
-  plz-out/gen/src/greetings/greetings.py
-```
-
-Here we can see that the output of a `python_library` rule is a `.py` file which is stored in
-`plz-out/gen/src/greetings/greetings.py`.
-
-We have also provided a `visibility` list to this rule. This is used to control where this `python_library()` rule can be
-used within our project. In this case, any rule under `src`, denoted by the `...` syntax.
-
-NB: This syntax can also be used on the command line, e.g. `plz build //src/...`.
-
-### A note about `python_binary()`
-If you're used to Python, one thing that might trip you up is how we package Python. The `python_binary()` rule outputs
-something called a `pex`. This is very similar to the concept of a `.jar` file from the java world. All the Python files
-relating to that build target are zipped up into a self-executable `.pex` file. This makes deploying and distributing
-Python simple as there's only one file to distribute.
-
-Check it out:
-```
-$ plz build //src:main
-Build finished; total time 50ms, incrementality 100.0%. Outputs:
-//src:main:
-  plz-out/bin/src/main.pex
-
-$ plz-out/bin/src/main.pex
-Bonjour, world!
-```
-
-## Using our new module
-Duration: 2
-
-To maintain a principled model for incremental and hermetic builds, Please requires that rules are explicit about their
-inputs and outputs. To use this new package in our "hello world" program, we have to add it as a dependency:
-
-### `src/BUILD`
-```python
-python_binary(
-    name = "main",
-    main = "main.py",
-    # NB: if the package and rule name are the same, you may omit the name i.e. this could be just //src/greetings
-    deps = ["//src/greetings:greetings"],
+hash_file(
+  name = "hashme",
+  file = "somefile.foo",
 )
 ```
 
-You can see we use a build label to refer to another rule here. Please will make sure that this rule is built before
-making its outputs available to our rule here.
+And then we'll make sure it works:
 
-Then update src/main.py:
-### `src/main.py`
-```python
-from src.greetings import greetings
+```shell
+$ plz build //test:hashme
+Build finished; total time 80ms, incrementality 0.0%. Outputs:
+//test:hashme:                                                
+  plz-out/gen/test/hashme.hash                                
 
-print(greetings.greeting() + ", world!")
-```
-
-Give it a whirl:
-
-```
-$ plz run //src:main
-Bonjour, world!
+$ cat plz-out/gen/test/hashme.hash
+0562f08aef399135936d6fb4eb0cc7bc1890d5b4  test/somefile.foo
 ```
 
 ## Testing our code
