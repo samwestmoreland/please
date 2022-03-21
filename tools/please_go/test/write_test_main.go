@@ -18,28 +18,31 @@ type testDescr struct {
 	Main           string
 	TestFunctions  []string
 	BenchFunctions []string
+	FuzzFunctions  []string
 	Examples       []*doc.Example
 	CoverVars      []CoverVar
 	Imports        []string
 	Coverage       bool
 	Benchmark      bool
+	HasFuzz        bool
 }
 
 // WriteTestMain templates a test main file from the given sources to the given output file.
 // This mimics what 'go test' does, although we do not currently support benchmarks or examples.
-func WriteTestMain(testPackage string, sources []string, output string, coverage bool, coverVars []CoverVar, benchmark bool) error {
+func WriteTestMain(testPackage string, sources []string, output string, coverage bool, coverVars []CoverVar, benchmark, hasFuzz bool) error {
 	testDescr, err := parseTestSources(sources)
 	if err != nil {
 		return err
 	}
 	testDescr.Coverage = coverage
 	testDescr.CoverVars = coverVars
-	if len(testDescr.TestFunctions) > 0 || len(testDescr.BenchFunctions) > 0 || len(testDescr.Examples) > 0 || testDescr.Main != "" {
+	if len(testDescr.TestFunctions) > 0 || len(testDescr.BenchFunctions) > 0 || len(testDescr.Examples) > 0 || len(testDescr.FuzzFunctions) > 0 || testDescr.Main != "" {
 		// Can't set this if there are no test functions, it'll be an unused import.
 		testDescr.Imports = extraImportPaths(testPackage, testDescr.Package, testDescr.CoverVars)
 	}
 
 	testDescr.Benchmark = benchmark
+	testDescr.HasFuzz = hasFuzz
 
 	f, err := os.Create(output)
 	if err != nil {
@@ -87,6 +90,8 @@ func parseTestSources(sources []string) (testDescr, error) {
 					descr.TestFunctions = append(descr.TestFunctions, name)
 				} else if isTest(fd, 1, name, "Benchmark") {
 					descr.BenchFunctions = append(descr.BenchFunctions, name)
+				} else if isTest(fd, 1, name, "Fuzz") {
+					descr.FuzzFunctions = append(descr.FuzzFunctions, name)
 				}
 			}
 		}
@@ -168,6 +173,14 @@ var benchmarks = []_gostdlib_testing.InternalBenchmark{
 {{end}}
 }
 
+{{ if .HasFuzz }}
+var fuzzTargets = []_gostdlib_testing.InternalFuzzTarget{
+{{ range .FuzzFunctions }}
+	{"{{.}}", {{$.Package}}.{{.}}},
+{{ end }}
+}
+{{ end }}
+
 {{if .Coverage}}
 
 // Only updated by init functions, so no need for atomicity.
@@ -227,11 +240,11 @@ func main() {
 		args = append(args, "-test.run", testVar)
     }
     _gostdlib_os.Args = append(args, _gostdlib_os.Args[1:]...)
-	m := _gostdlib_testing.MainStart(testDeps, tests, nil, examples)
+	m := _gostdlib_testing.MainStart(testDeps, tests, nil,{{ if .HasFuzz }} fuzzTargets,{{ end }} examples)
 {{else}}
 	args = append(args, "-test.bench", ".*")
 	_gostdlib_os.Args = append(args, _gostdlib_os.Args[1:]...)
-	m := _gostdlib_testing.MainStart(testDeps, nil, benchmarks, nil)
+	m := _gostdlib_testing.MainStart(testDeps, nil, benchmarks,{{ if .HasFuzz }} fuzzTargets,{{ end }} nil)
 {{end}}
 
 {{if .Main}}

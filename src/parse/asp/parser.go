@@ -27,6 +27,7 @@ type Parser struct {
 	interpreter *interpreter
 	// Stashed set of source code for builtin rules.
 	builtins map[string][]byte
+
 	// Parallelism limiter to ensure we don't try to run too many parses simultaneously
 	limiter semaphore
 }
@@ -71,7 +72,7 @@ func (p *Parser) MustLoadBuiltins(filename string, contents []byte) {
 // ParseFile parses the contents of a single file in the BUILD language.
 // It returns true if the call was deferred at some point awaiting  target to build,
 // along with any error encountered.
-func (p *Parser) ParseFile(pkg *core.Package, filename string, preamble string) error {
+func (p *Parser) ParseFile(pkg *core.Package, filename string) error {
 	p.limiter.Acquire()
 	defer p.limiter.Release()
 
@@ -80,21 +81,31 @@ func (p *Parser) ParseFile(pkg *core.Package, filename string, preamble string) 
 		return err
 	}
 
-	if preamble != "" {
-		stmts, err := p.parseAndHandleErrors(strings.NewReader(preamble))
-		if err != nil {
-			return err
-		}
-
-		statements = append(stmts, statements...)
-	}
-
 	_, err = p.interpreter.interpretAll(pkg, statements)
 	if err != nil {
 		f, _ := os.Open(filename)
 		p.annotate(err, f)
 	}
 	return err
+}
+
+func (p *Parser) SubincludeTarget(state *core.BuildState, target *core.BuildTarget) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = handleErrors(r)
+		}
+	}()
+	p.limiter.Acquire()
+	defer p.limiter.Release()
+	subincludePkgState := state
+	if target.Subrepo != nil {
+		subincludePkgState = target.Subrepo.State
+	}
+	p.interpreter.loadPluginConfig(subincludePkgState, state)
+	for _, out := range target.FullOutputs() {
+		p.interpreter.scope.SetAll(p.interpreter.Subinclude(out, target.Label), true)
+	}
+	return nil
 }
 
 // ParseReader parses the contents of the given ReadSeeker as a BUILD file.

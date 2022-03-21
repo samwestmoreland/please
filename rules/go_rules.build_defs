@@ -4,7 +4,7 @@ Go has a strong built-in concept of packages so it's probably a good idea to mat
 rules to Go packages.
 """
 def go_toolchain(name:str, url:str|dict = '', version:str = '', hashes:list = [], visibility:list = ["PUBLIC"],
-                 architectures:list=[], strip_srcs=False):
+                 architectures:list=[], strip_srcs:bool=False, tags:list=None):
     """
     Downloads Go and exposes :<name>|go and :<name>|gofmt as entry points. To use this rule add the
     following to your .plzconfig:
@@ -27,6 +27,7 @@ def go_toolchain(name:str, url:str|dict = '', version:str = '', hashes:list = []
       strip_srcs (bool): Whether to strip sources from the SDK which can reduce the size of the cached artifacts and
                          improve performance, especially for remote execution. This doesn't work with go_get() however
                          it is recommended to set this to True if you're using go_module() exclusively.
+      tags (bool): Build tags to pass when installing the standard library.
     """
     if url and version:
         fail("Either version or url should be provided but not both")
@@ -52,9 +53,10 @@ def go_toolchain(name:str, url:str|dict = '', version:str = '', hashes:list = []
     if architectures and CONFIG.CGO_ENABLED == "1":
         cmd += f" && export CGO_ENABLED={CONFIG.CGO_ENABLED} && export CFLAGS=\"{CONFIG.GO_C_FLAGS}\" && export CC=$TOOLS_CC"
 
+    tag_flag = (' -tags ' + ','.join(tags)) if tags else ''
     for arch in architectures:
         goos, _, goarch = arch.partition("_")
-        cmd += f' && (export GOOS={goos} && export GOARCH={goarch} && $OUT/bin/go install std)'
+        cmd += f' && (export GOOS={goos} && export GOARCH={goarch} && $OUT/bin/go install{tag_flag} std)'
     if strip_srcs:
         trim_toolchain = "mv $OUT/src src && mkdir $OUT/src && mv src/unsafe $OUT/src/unsafe"
         cmd = f"{cmd} && {trim_toolchain}"
@@ -86,7 +88,7 @@ def _pkg_sources(name: str, deps: list, test_only:bool):
     Without this, we'd have to transitively pull in all third party sources for the rule which is very expensive,
     especially for remote execution.
     """
-    package_prefix = "//" + package_name() + ":"
+    package_prefix = canonicalise(":all").removesuffix("all")
     return filegroup(
        name = name,
        tag = "pkg_srcs",
@@ -123,6 +125,7 @@ def go_library(name:str, srcs:list, resources:list=None, asm_srcs:list=None, hdr
       package (str): The package as it would appear at the top of the go source files. Defaults
                      to name.
     """
+    assert srcs, "Cannot provide an empty srcs list to go_library"
     cover = cover and CONFIG.BUILD_CONFIG == "cover"
     package = package or name
     out = package + '.a'
@@ -347,8 +350,8 @@ def _get_import_path(package="", import_path=""):
     else:
         path = pkg
 
-    # TODO(jpoole): this isn't really necessary and isn't how go works. We could probably remove this for v17.
-    if package and not path.endswith(package):
+    # TODO(jpoole): remove this flag in v17
+    if not CONFIG.FF_GO_DONT_COLLAPSE_IMPORT_PATHS and package and not path.endswith(package):
         return f"{path}/{package}"
     return path
 
@@ -705,26 +708,26 @@ def go_test(name:str, srcs:list, resources:list=None, data:list|dict=None, deps:
     cmds, tools = _go_binary_cmds(static=static, definitions=definitions, gcov=cgo)
 
     test_cmd = f'$TEST {flags} 2>&1 | tee $TMP_DIR/test.results'
-    worker_cmd = f'$(worker {worker})'
-    if worker:
+    worker_cmd = f'$(worker {worker})' if worker else ""
+    if worker_cmd:
         test_cmd = f'{worker_cmd} && {test_cmd} '
         deps += [worker]
+
+    debug_cmd, debug_data, debug_tools = _debug_cmd(
+        name = name,
+        bin = "./$TEST",
+        flags = flags,
+        pre_cmd = worker_cmd,
+        srcs = srcs + [main_rule],
+        deps = deps,
+        test_only = True
+    )
 
     if CONFIG.GO_TEST_ROOT_COMPAT:
         # This is a workaround for remote execution; $RESULTS_FILE is set to a relative path remotely.
         test_cmd = f'export TEST=./$(basename $TEST) && mkdir -p $PKG_DIR && mv $TEST $PKG_DIR && cd $PKG_DIR && {test_cmd}'
         for out in test_outputs:
             test_cmd += f' && mv {out} $TMP_DIR/{out}'
-
-    debug_cmd, debug_data, debug_tools = _debug_cmd(
-        name = name,
-        bin = "./$TEST",
-        flags = flags,
-        pre_cmd = worker_cmd if worker else "",
-        srcs = srcs + [main_rule],
-        deps = deps,
-        test_only = True
-    )
 
     return build_rule(
         name = name,
@@ -891,7 +894,11 @@ def go_test_main(name:str, srcs:list, test_package:str="", test_only:bool=False,
     cover = cover and (CONFIG.BUILD_CONFIG == "cover")
     test_package = test_package or _get_import_path()
     external_flag = " --external" if external else ""
-    cmd = f'"$TOOLS" testmain --test_package "{test_package}"{external_flag} --import_path "{CONFIG.GO_IMPORT_PATH}" -o $OUT'
+
+    cmd = f'"$TOOLS_PLZ" testmain --test_package "{test_package}"{external_flag} --import_path "{CONFIG.GO_IMPORT_PATH}" -o $OUT'
+    # TODO(jpoole): remove this in v17
+    if CONFIG.FF_GO_DONT_COLLAPSE_IMPORT_PATHS:
+        cmd = f"FF_GO_DONT_COLLAPSE_IMPORT_PATHS=true {cmd}"
     if benchmark:
         cmd = f'{cmd} --benchmark'
     cmds = {
@@ -912,7 +919,10 @@ def go_test_main(name:str, srcs:list, test_package:str="", test_only:bool=False,
         needs_transitive_deps = cover,  # Need all dependencies to template coverage variables
         requires = ['go', 'go_src'] if cover else ['go'],
         test_only = test_only,
-        tools = [CONFIG.PLEASE_GO_TOOL],
+        tools = {
+            'plz': [CONFIG.PLEASE_GO_TOOL],
+            'go': [CONFIG.GO_TOOL],
+        },
         post_build = _post_build,
         visibility = visibility,
         labels = labels,
@@ -986,7 +996,7 @@ def _remove_redundant_outs(outs):
     return [r for r in new_outs.keys() if new_outs[r]]
 
 def _go_install_module(name:str, module:str, install:list, src:str, outs:list, deps:list, binary:bool, visibility:list,
-                       test_only:bool, licences:list, linker_flags:list, env:dict, build_tags:list):
+                       test_only:bool, licences:list, linker_flags:list, env:dict, build_tags:list, labels:list=[]):
     build_tags = " ".join([f"--build_tag={tag}" for tag in build_tags])
     cmd = [
         _set_go_env(),
@@ -1019,7 +1029,7 @@ def _go_install_module(name:str, module:str, install:list, src:str, outs:list, d
         binary = binary,
         requires = ['go'],
         test_only = test_only,
-        labels = ['link:plz-out/go'] + [f'cc:ld:{f}' for f in linker_flags],
+        labels = labels + ['link:plz-out/go'] + [f'cc:ld:{f}' for f in linker_flags],
         needs_transitive_deps = True,
         licences = licences,
         post_build = _add_ld_flags,
@@ -1147,9 +1157,9 @@ def go_mod_download(name:str, module:str, version:str, test_only:bool=False, vis
     )
 
 def go_module(name:str='', module:str, version:str='', download:str='', deps:list=[], exported_deps:list=[],
-              visibility:list=None, test_only:bool=False, binary:bool=False, install:list=[], hashes:list=None,
-              licences:list=None, linker_flags:list=[], strip:list=[], env:dict={}, patch:list|str=[],
-              build_tags:list=[]):
+              visibility:list=None, test_only:bool=False, binary:bool=False, install:list=[], labels:list=[],
+              hashes:list=None, licences:list=None, linker_flags:list=[], strip:list=[], env:dict={},
+              patch:list|str=[], build_tags:list=[]):
     """Defines a dependency on a third-party Go module.
 
     Note that unlike a normal `go get` call, this does *not* install transitive dependencies.
@@ -1177,6 +1187,7 @@ def go_module(name:str='', module:str, version:str='', download:str='', deps:lis
                              to install for that target. Specify the empty string as an element in the list
                              to install a target's root package.
       strip (list ): List of paths to strip from the target after downloading but before building it.
+      labels (list): Additional labels to apply to this rule.
       hashes (list): List of hashes to verify the downloaded sources against.
       licences (list): Licences this rule is subject to.
       linker_flags (list): Any additional linker flags to apply. Linker flags defined in the module itself will
@@ -1242,6 +1253,7 @@ def go_module(name:str='', module:str, version:str='', download:str='', deps:lis
         linker_flags = linker_flags,
         env = env,
         build_tags = build_tags,
+        labels = labels if binary else [],
     )
 
     if binary:
@@ -1267,7 +1279,7 @@ def go_module(name:str='', module:str, version:str='', download:str='', deps:lis
             "go": f":{name}", # provide the filegroup otherwise exported deps don't work
             "go_src": download,
         },
-        labels = [f"go_package:{i}" for i in install] + [f"go_module:{module}"],
+        labels = labels + [f"go_package:{i}" for i in install],
         visibility = visibility,
         needs_transitive_deps = True,
         test_only = test_only,
@@ -1701,24 +1713,21 @@ def _get_ldflags_and_pkgconfig(name):
 
 # `dlv` is currently the only debugger supported.
 def _debug_cmd(name:str, bin:str, flags:str='', pre_cmd:str='', srcs:list=[], deps:list=[], test_only:bool=False):
-    if not CONFIG.get("DEBUG"):
+    if CONFIG.BUILD_CONFIG != 'dbg':
         return "", None, None
 
     # Delve command.
     cmd = f"$DEBUG_TOOLS_DLV exec {bin}"
+    if CONFIG.DEBUG_PORT:
+        cmd = f"{cmd} --headless=true --listen=localhost:{CONFIG.DEBUG_PORT} --api-version=2 --check-go-version=false"
+    cmd = f"{cmd} -- {flags}"
+
     tools = {
         'dlv': CONFIG.DELVE_TOOL
     }
 
-    port = CONFIG.DEBUG.PORT
-    if port:
-        # Start a debug session where clients (i.e. IDEs) can connect to instead.
-        cmd = f"{cmd} --headless=true --listen=localhost:{port} --api-version=2 --check-go-version=false"
-
-    cmd = f"{cmd} -- {flags}"
-
     # Make sources available to the debugger.
-    debug_srcs_tar = f"_{name}_debug_srcs.tar"
+    debug_srcs_tar = f".{name}_debug_srcs.tar"
     data = [
         build_rule(
             name = name,

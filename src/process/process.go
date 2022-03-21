@@ -40,9 +40,6 @@ type Executor struct {
 }
 
 func NewSandboxingExecutor(usePleaseSandbox bool, namespace NamespacingPolicy, sandboxTool string) *Executor {
-	if usePleaseSandbox {
-		log.Warning("The please built in sandboxing is experimental and may not work as expected. Caveat usor!")
-	}
 	o := &Executor{
 		namespace:        namespace,
 		usePleaseSandbox: usePleaseSandbox,
@@ -60,7 +57,7 @@ func New() *Executor {
 
 // SandboxConfig contains what namespaces should be sandboxed
 type SandboxConfig struct {
-	Network, Mount bool
+	Network, Mount, Fakeroot bool
 }
 
 // NoSandbox represents a no-sandbox value

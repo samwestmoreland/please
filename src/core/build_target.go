@@ -122,11 +122,11 @@ type BuildTarget struct {
 	// Data files of this rule by name.
 	NamedData map[string][]BuildInput `name:"data"`
 	// Output files of this rule. All are paths relative to this package.
-	outputs []string `name:"outs"`
+	outputs []string `name:"outs" hide:"filegroup"`
 	// Named output subsets of this rule. All are paths relative to this package but can be
 	// captured separately; for example something producing C code might separate its outputs
 	// into sources and headers.
-	namedOutputs map[string][]string `name:"outs"`
+	namedOutputs map[string][]string `name:"outs" hide:"filegroup"`
 	// Optional output files of this rule. Same as outs but aren't required to be produced always.
 	// Can be glob patterns.
 	OptionalOutputs []string `name:"optional_outs"`
@@ -142,6 +142,8 @@ type BuildTarget struct {
 	Debug *DebugFields
 	// If ShowProgress is true, this is used to store the current progress of the target.
 	Progress float32 `print:"false"`
+	// For remote_files, this is the total size of the download (if known)
+	FileSize float32 `print:"false"`
 	// Description displayed while the command is building.
 	// Default is just "Building" but it can be customised.
 	BuildingDescription string `name:"building_description"`
@@ -1172,6 +1174,11 @@ func (target *BuildTarget) UnprefixedHashes() []string {
 	return hashes
 }
 
+// HashLastModified is whether we should hash the last modified times for this target
+func (target *BuildTarget) HashLastModified() bool {
+	return target.IsFilegroup && target.HasLabel("fg:hash-modified-time")
+}
+
 // AddSource adds a source to the build target, deduplicating against existing entries.
 func (target *BuildTarget) AddSource(source BuildInput) {
 	target.Sources = target.addSource(target.Sources, source)
@@ -1764,6 +1771,20 @@ func (target *BuildTarget) AddOutputDirectory(dir string) {
 // GetFileContent returns the file content, expanding it if it needs to
 func (target *BuildTarget) GetFileContent(state *BuildState) (string, error) {
 	return ReplaceSequences(state, target, target.FileContent)
+}
+
+// HasLinks returns true if the outputs are meant to be linked somewhere (i.e. via symlinks).
+// This check is useful in deciding whether this target should be downloaded during remote execution or not.
+func (target *BuildTarget) HasLinks(state *BuildState) bool {
+	for _, prefix := range []string{"link:", "hlink:", "dlink:", "dhlink:"} {
+		if labels := target.PrefixedLabels(prefix); len(labels) > 0 {
+			return true
+		}
+	}
+	if state.Config.ShouldLinkGeneratedSources() && target.HasLabel("codegen") {
+		return true
+	}
+	return false
 }
 
 // BuildTargets makes a slice of build targets sortable by their labels.

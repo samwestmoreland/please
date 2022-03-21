@@ -1,3 +1,77 @@
+Version 16.19.0
+---------------
+    * Add Go 1.18 fuzz testing support #2269
+    * Fix incorrect resolving of @self keyword that should resolve relative
+      to the repo/plugin where it appears #2270
+    * Sort user provided env for remote execution for better determinism #2273
+    * Targets can now be specified to opt out of sandboxing #2282
+    * Fix issue with preloading subincludes, where it would fail if the subinclude
+      itself also had subincludes #2281
+    * Allow outputs to be downloaded transitively in remote when debugging is on #2278
+    * Remove duplicate labels being applied to `go_module()` rules #2254
+    * Gracefully handle missing tools during `plz query changes` #2130
+    * Allow specifying a github access token as an environment variable
+      to `github_repo()` to access private repos #2249
+    * Show the download rate of `remote_file()` rules in the progress
+      update #2261
+    * Improvements to `plz query print --json` to align it more closely
+      to the python-eque (asp) representation #2250
+    * Allow hashing `filegroup()`s by the last modified timestamp of their
+      sources. This helps with large files, and can be done by applying
+      the `fg:hash-modified-time` label #2266
+    * Allow plugins to specify if a configuration value should be inherited
+      from the host repo, or overriden from the subrepo's config #2216
+    * Allow restricting the hashing algorithms for validating the `hashes`
+      field #2267
+
+
+Version 16.18.0
+---------------
+    * Stop showing line by line coverage results when tests fail #2227
+    * Add support for the xxhash hashing algorithm #2229
+    * Use an environment variable to pass in go to the go test main tool
+      to improve migration strategy #2239
+    * Handle aliases to multi-level commands #2242
+    * Make `plz run sequential` use the same `--output` flag as
+      `plz run parallel` #2243
+    * Implement a command cache to use custom commands to store and
+      retrieve items from the cache e.g. `s3 cp - s3://cache/$CACHE_KEY`
+      #2244
+
+
+Version 16.17.1
+---------------
+    * The default jarcat_tool (now arcat) for Linux is now correctly linked
+      and does not attempt to use glibc at runtime.
+
+
+Version 16.17.0
+--------------
+    * `c_library`, `c_static_library`, `cc_library`, `cc_static_library` rules
+      now expose an `out` field for a custom name #2203
+    * New `tag()` builtin was added that allows tagging a target name #2202
+    * Add plugin version check #2206
+    * `remote_file` rule now includes support for the passing of credentials
+      and header values #2128
+    * Fix issue with `plz test -d` where it only accepts a single target but
+      it isn't considering pseudo targets (i.e. //... or //:all) #2205
+    * Plugin config keys can be inferred now, if not set #2212
+    * Further enhancements and fixes to the recent `plz debug` command to
+      better support IDEs #2213
+    * Add docs for `plz exec` #2199
+    * Virtual envs for Python (i.e. venv) are now generated under plz-out #2210
+
+
+Version 16.16.0
+--------------
+    * Added `plz query config` which can be used to retrieve what the value
+      a config field has from the variaous places Please loads `.plzconfig`
+      files #2190
+    * Fix test fields not appearing for `plz query print` when using `--fields`
+      #2200
+    * Fix missing signatures on darwin_arm64 release #2208
+
+
 Version 16.15.1
 --------------
     * Preserve original quotes in multi-line strings #2184

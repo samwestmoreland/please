@@ -24,8 +24,10 @@ go_library(
         "//third_party/go:godirwalk",
         "//third_party/go:logging",
         "//third_party/go:psutil",
+        "//third_party/go:semver",
         "//third_party/go:shlex",
         "//third_party/go:xattr",
+        "//third_party/go:xxhash",
     ],
 )
 
@@ -127,7 +129,10 @@ go_test(
 
 go_test(
     name = "build_label_test",
-    srcs = ["build_label_test.go"],
+    srcs = [
+        "build_label_fuzz_test.go",
+        "build_label_test.go",
+    ],
     deps = [
         ":core",
         "//third_party/go:testify",

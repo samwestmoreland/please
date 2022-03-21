@@ -135,13 +135,28 @@ func ParseBuildLabel(target, currentPath string) BuildLabel {
 	return label
 }
 
-func ParseAnnotatedBuildLabel(target, currentPath string) AnnotatedOutputLabel {
+func splitAnnotation(target string) (string, string) {
 	parts := strings.Split(target, "|")
-	l := ParseBuildLabel(parts[0], currentPath)
 	annotation := ""
 	if len(parts) == 2 {
 		annotation = parts[1]
 	}
+	return parts[0], annotation
+}
+func ParseAnnotatedBuildLabel(target, currentPath string) AnnotatedOutputLabel {
+	label, annotation := splitAnnotation(target)
+	l := ParseBuildLabel(label, currentPath)
+
+	return AnnotatedOutputLabel{
+		BuildLabel: l,
+		Annotation: annotation,
+	}
+}
+
+func ParseAnnotatedBuildLabelContext(target string, context *Package) AnnotatedOutputLabel {
+	label, annotation := splitAnnotation(target)
+	l := ParseBuildLabelContext(label, context)
+
 	return AnnotatedOutputLabel{
 		BuildLabel: l,
 		Annotation: annotation,
@@ -183,10 +198,10 @@ func parseBuildLabelParts(target, currentPath, subrepo string) (string, string, 
 		return currentPath, target[1:], ""
 	} else if target[0] == '@' {
 		// @subrepo//pkg:target or @subrepo:target syntax
-		return parseBuildLabelSubrepo(target[1:], currentPath, subrepo)
+		return parseBuildLabelSubrepo(target[1:], currentPath)
 	} else if strings.HasPrefix(target, "///") {
 		// ///subrepo/pkg:target syntax.
-		return parseBuildLabelSubrepo(target[3:], currentPath, subrepo)
+		return parseBuildLabelSubrepo(target[3:], currentPath)
 	} else if target[0] != '/' || target[1] != '/' {
 		return "", "", ""
 	} else if idx := strings.IndexRune(target, ':'); idx != -1 {
@@ -210,7 +225,7 @@ func parseBuildLabelParts(target, currentPath, subrepo string) (string, string, 
 }
 
 // parseBuildLabelSubrepo parses a build label that began with a subrepo symbol (either @ or ///).
-func parseBuildLabelSubrepo(target, currentPath, currentSubrepo string) (string, string, string) {
+func parseBuildLabelSubrepo(target, currentPath string) (string, string, string) {
 	idx := strings.Index(target, "//")
 	if idx == -1 {
 		// if subrepo and target are the same name, then @subrepo syntax will also suffice
@@ -225,12 +240,7 @@ func parseBuildLabelSubrepo(target, currentPath, currentSubrepo string) (string,
 		return "", "", ""
 	}
 	pkg, name, _ := parseBuildLabelParts(target[idx:], currentPath, "")
-
-	subrepo := target[:idx]
-	if subrepo == "self" {
-		subrepo = currentSubrepo
-	}
-	return pkg, name, subrepo
+	return pkg, name, target[:idx]
 }
 
 // As above, but allows parsing of relative labels (eg. rules:python_rules)
@@ -278,6 +288,12 @@ func (label BuildLabel) IsAllSubpackages() bool {
 // IsAllTargets returns true if the label is the pseudo-label referring to all targets in this package.
 func (label BuildLabel) IsAllTargets() bool {
 	return label.Name == "all"
+}
+
+// IsPseudoTarget returns true if either the liable ends in ... or in all.
+// It is useful to check if a liable potentially references more than one target.
+func (label BuildLabel) IsPseudoTarget() bool {
+	return label.IsAllSubpackages() || label.IsAllTargets()
 }
 
 // Includes returns true if label includes the other label (//pkg:target1 is covered by //pkg:all etc).
@@ -450,6 +466,18 @@ func (label BuildLabel) isExperimental(state *BuildState) bool {
 		}
 	}
 	return false
+}
+
+// Matches returns whether the build label matches the other based on wildcard rules
+func (label BuildLabel) Matches(other BuildLabel) bool {
+	if label.Name == "..." {
+		return label.PackageName == "." || strings.HasPrefix(other.PackageName, label.PackageName)
+	}
+	if label.Name == "all" {
+		return label.PackageName == other.PackageName
+	}
+	// Allow //foo:_bar#bazz to match //foo:bar
+	return label == other.Parent()
 }
 
 // Complete implements the flags.Completer interface, which is used for shell completion.

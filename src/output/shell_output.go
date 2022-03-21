@@ -375,7 +375,7 @@ func printBuildResults(state *core.BuildState, duration time.Duration) {
 	}
 	// Print this stuff so we always see it.
 	printf("Build finished; total time %s, incrementality %.1f%%.", duration, incrementality)
-	if state.RemoteClient != nil && !state.DownloadOutputs {
+	if state.RemoteClient != nil && state.OutputDownload == core.NoOutputDownload {
 		fmt.Printf("\n") // Outputs are not downloaded so do not print them out.
 		return
 	}
@@ -435,7 +435,7 @@ func printTempDirs(state *core.BuildState, duration time.Duration, shell, shellR
 			log.Debug("Full command: %s", strings.Join(argv, " "))
 			cmd := state.ProcessExecutor.ExecCommand(process.NewSandboxConfig(shouldSandbox, shouldSandbox), false, argv[0], argv[1:]...)
 			cmd.Dir = dir
-			cmd.Env = env
+			cmd.Env = append(cmd.Env, env...)
 			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr

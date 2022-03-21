@@ -39,6 +39,11 @@ func SubrepoForArch(state *BuildState, arch cli.Arch) *Subrepo {
 	}
 }
 
+// SubrepoArchName returns the subrepo name augmented for the given architecture
+func SubrepoArchName(subrepo string, arch cli.Arch) string {
+	return subrepo + "_" + arch.String()
+}
+
 // Dir returns the directory for a package of this name.
 func (s *Subrepo) Dir(dir string) string {
 	return path.Join(s.Root, dir)
@@ -48,7 +53,9 @@ func (s *Subrepo) Dir(dir string) string {
 // it's not done up front.
 func (s *Subrepo) LoadSubrepoConfig() (err error) {
 	s.loadConfig.Do(func() {
-		err = readConfigFile(s.State.Config, filepath.Join(s.Root, ".plzconfig"))
+		s.State.RepoConfig = &Configuration{}
+		err = readConfigFile(s.State.RepoConfig, filepath.Join(s.Root, ".plzconfig"), true)
+		err = readConfigFile(s.State.Config, filepath.Join(s.Root, ".plzconfig"), true)
 	})
 	return
 }

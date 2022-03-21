@@ -26,6 +26,7 @@ import (
 	"github.com/thought-machine/please/src/core"
 	"github.com/thought-machine/please/src/fs"
 	"github.com/thought-machine/please/src/generate"
+	"github.com/thought-machine/please/src/metrics"
 	"github.com/thought-machine/please/src/process"
 	"github.com/thought-machine/please/src/worker"
 )
@@ -41,11 +42,26 @@ var httpClientOnce sync.Once
 
 var magicSourcesWorkerKey = "WORKER"
 
+var successfulRemoteTargetBuildDuration = metrics.NewHistogram(
+	"remote",
+	"target_build_duration",
+	"Time taken to successfully build a target, in seconds",
+	metrics.ExponentialBuckets(0.125, 2, 12), // 12 buckets, starting at 0.125s and doubling in width.
+)
+
+var successfulLocalTargetBuildDuration = metrics.NewHistogram(
+	"local",
+	"target_build_duration",
+	"Time taken to successfully build a target, in seconds",
+	metrics.ExponentialBuckets(0.125, 2, 12), // 12 buckets, starting at 0.125s and doubling in width.
+)
+
 // Build implements the core logic for building a single target.
 func Build(tid int, state *core.BuildState, label core.BuildLabel, remote bool) {
 	target := state.Graph.TargetOrDie(label)
 	state = state.ForTarget(target)
 	target.SetState(core.Building)
+	start := time.Now()
 	if err := buildTarget(tid, state, target, remote); err != nil {
 		if errors.Is(err, errStop) {
 			target.SetState(core.Stopped)
@@ -58,6 +74,11 @@ func Build(tid int, state *core.BuildState, label core.BuildLabel, remote bool) 
 		}
 		target.SetState(core.Failed)
 		return
+	}
+	if remote {
+		successfulRemoteTargetBuildDuration.Observe(time.Since(start).Seconds())
+	} else {
+		successfulLocalTargetBuildDuration.Observe(time.Since(start).Seconds())
 	}
 	// Mark the target as having finished building.
 	target.FinishBuild()
@@ -701,12 +722,12 @@ func moveOutputs(state *core.BuildState, target *core.BuildTarget) ([]string, bo
 
 func moveOutput(state *core.BuildState, target *core.BuildTarget, tmpOutput, realOutput string) (bool, error) {
 	// hash the file
-	newHash, err := state.PathHasher.Hash(tmpOutput, false, true)
+	newHash, err := state.PathHasher.Hash(tmpOutput, false, true, false)
 	if err != nil {
 		return true, err
 	}
 	if fs.PathExists(realOutput) {
-		if oldHash, err := state.PathHasher.Hash(realOutput, false, true); err != nil {
+		if oldHash, err := state.PathHasher.Hash(realOutput, false, true, false); err != nil {
 			return true, err
 		} else if bytes.Equal(oldHash, newHash) {
 			// We already have the same file in the current location. Don't bother moving it.
@@ -868,14 +889,14 @@ func (h *targetHasher) outputHash(target *core.BuildTarget) ([]byte, error) {
 func outputHash(target *core.BuildTarget, outputs []string, hasher *fs.PathHasher, combine func() hash.Hash) ([]byte, error) {
 	if combine == nil {
 		// Must be a single output, just hash that directly.
-		return hasher.Hash(outputs[0], true, !target.IsFilegroup)
+		return hasher.Hash(outputs[0], true, !target.IsFilegroup, target.HashLastModified())
 	}
 	h := combine()
 	for _, filename := range outputs {
 		// NB. Always force a recalculation of the output hashes here. Memoisation is not
 		//     useful because by definition we are rebuilding a target, and can actively hurt
 		//     in cases where we compare the retrieved cache artifacts with what was there before.
-		h2, err := hasher.Hash(filename, true, !target.IsFilegroup)
+		h2, err := hasher.Hash(filename, true, !target.IsFilegroup, target.HashLastModified())
 		if err != nil {
 			return nil, err
 		}
@@ -1018,7 +1039,7 @@ func buildLinksOfType(state *core.BuildState, target *core.BuildTarget, prefix s
 			srcDir := path.Join(core.RepoRoot, target.OutDir())
 			for _, out := range target.Outputs() {
 				if direct {
-					fs.LinkIfNotExists(path.Join(srcDir, out), destDir, f)
+					fs.LinkDestination(path.Join(srcDir, out), destDir, f)
 				} else {
 					fs.LinkIfNotExists(path.Join(srcDir, out), path.Join(destDir, out), f)
 				}
@@ -1097,10 +1118,11 @@ func fetchOneRemoteFile(state *core.BuildState, target *core.BuildTarget, url st
 	var r io.Reader = resp.Body
 	if length := resp.Header.Get("Content-Length"); length != "" {
 		if i, err := strconv.Atoi(length); err == nil {
-			r = &progressReader{Reader: resp.Body, Target: target, Total: float32(i)}
+			target.FileSize = float32(i)
+			r = &progressReader{Reader: resp.Body, Target: target, Total: target.FileSize}
+			target.ShowProgress = true // Required for it to actually display
 		}
 	}
-	target.ShowProgress = true // Required for it to actually display
 	h := state.PathHasher.NewHash()
 	if _, err := io.Copy(io.MultiWriter(f, h), r); err != nil {
 		return err

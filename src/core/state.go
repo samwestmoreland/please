@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/OneOfOne/cmap"
+	"github.com/cespare/xxhash/v2"
 	"lukechampine.com/blake3"
 
 	"github.com/thought-machine/please/src/cli"
@@ -49,18 +50,28 @@ type Task struct {
 	Run   uint32 // Only present for tests (the run of a build is always zero)
 }
 
-// Debug is the type for debugging a target
-type Debug struct {
-	Debugger string
-	Port     int
-}
+// A OutputDownloadOption is the option for how outputs should be downloaded.
+type OutputDownloadOption uint8
+
+const (
+	// Don't download outputs.
+	NoOutputDownload OutputDownloadOption = iota
+	// Download original target outputs only.
+	OriginalOutputDownload
+	// Download original target's transitive outputs too.
+	TransitiveOutputDownload
+)
 
 // A Parser is the interface to reading and interacting with BUILD files.
 type Parser interface {
+	// NewParser creates a new parser on the state object
+	NewParser(state *BuildState)
+	// WaitForInit waits until the parser is fully initialised with pre-loaded build definitions
+	WaitForInit()
 	// ParseFile parses a single BUILD file into the given package.
-	ParseFile(state *BuildState, pkg *Package, filename string) error
+	ParseFile(pkg *Package, filename string) error
 	// ParseReader parses a single BUILD file into the given package.
-	ParseReader(state *BuildState, pkg *Package, reader io.ReadSeeker) error
+	ParseReader(pkg *Package, reader io.ReadSeeker) error
 	// RunPreBuildFunction runs a pre-build function for a target.
 	RunPreBuildFunction(threadID int, state *BuildState, target *BuildTarget) error
 	// RunPostBuildFunction runs a post-build function for a target.
@@ -111,6 +122,9 @@ type BuildState struct {
 	Stats *SystemStats
 	// Configuration options
 	Config *Configuration
+	// The .plzconfig file for this repo. Unlike Config, no default values are applied. This will represent the
+	// .plzconfig in a subrepo.
+	RepoConfig *Configuration
 	// Parser implementation. Other things can call this to perform various external parse tasks.
 	Parser Parser
 	// Subprocess executor.
@@ -163,8 +177,8 @@ type BuildState struct {
 	NeedHashesOnly bool
 	// True if we only want to prepare build directories (ie. 'plz build --prepare')
 	PrepareOnly bool
-	// True if we will download outputs during remote execution.
-	DownloadOutputs bool
+	// Whether and how to download outputs
+	OutputDownload OutputDownloadOption
 	// True if we only need to parse the initial package (i.e. don't search downwards
 	// through deps) - for example when doing `plz query print`.
 	ParsePackageOnly bool
@@ -183,8 +197,8 @@ type BuildState struct {
 	ShowTestOutput bool
 	// True to print all output of all tasks to stderr.
 	ShowAllOutput bool
-	// Set when a debugging session against a target is requested.
-	Debug *Debug
+	// Port specified when debugging a target in server mode.
+	DebugPort int
 	// True to attach a debugger on test failure.
 	DebugFailingTests bool
 	// True if we think the underlying filesystem supports xattrs (which affects how we write some metadata).
@@ -197,8 +211,10 @@ type BuildState struct {
 	experimentalLabels []BuildLabel
 	// Various items for tracking progress.
 	progress *stateProgress
-	// CurrentSubrepo is the subrepo this state is for or the empty string if it's for the host repo
+	// CurrentSubrepo is the subrepo this state is for or the empty string if this is the host repo's state
 	CurrentSubrepo string
+	// ParentState is the state of the repo containing this subrepo. Nil if this is the host repo.
+	ParentState *BuildState
 }
 
 // ExcludedBuiltinRules returns a set of rules to exclude based on the feature flags
@@ -214,6 +230,9 @@ func (state *BuildState) ExcludedBuiltinRules() map[string]struct{} {
 	if state.Config.FeatureFlags.ExcludeCCRules {
 		ret["c_rules.build_defs"] = struct{}{}
 		ret["cc_rules.build_defs"] = struct{}{}
+	}
+	if state.Config.FeatureFlags.ExcludeProtoRules {
+		ret["proto_rules.build_defs"] = struct{}{}
 	}
 	return ret
 }
@@ -447,7 +466,11 @@ func (state *BuildState) Hasher(name string) *fs.PathHasher {
 // OutputHashCheckers returns the subset of hash algos that are appropriate for checking the hashes argument on
 // build rules
 func (state *BuildState) OutputHashCheckers() []*fs.PathHasher {
-	return []*fs.PathHasher{state.Hasher("sha1"), state.Hasher("sha256"), state.Hasher("blake3")}
+	hashCheckers := make([]*fs.PathHasher, 0, len(state.Config.Build.HashCheckers))
+	for _, algo := range state.Config.Build.HashCheckers {
+		hashCheckers = append(hashCheckers, state.Hasher(algo))
+	}
+	return hashCheckers
 }
 
 // LogParseResult logs the result of a target parsing.
@@ -684,7 +707,7 @@ func (state *BuildState) ExpandLabels(labels []BuildLabel) BuildLabels {
 func (state *BuildState) expandLabels(labels []BuildLabel, justTests bool) BuildLabels {
 	ret := BuildLabels{}
 	for _, label := range labels {
-		if label.IsAllTargets() || label.IsAllSubpackages() {
+		if label.IsPseudoTarget() {
 			ret = append(ret, state.expandOriginalPseudoTarget(label, justTests)...)
 		} else {
 			ret = append(ret, label)
@@ -838,7 +861,10 @@ func (state *BuildState) AddTarget(pkg *Package, target *BuildTarget) {
 // ShouldDownload returns true if the given target should be downloaded during remote execution.
 func (state *BuildState) ShouldDownload(target *BuildTarget) bool {
 	// Need to download the target if it was originally requested (and the user didn't pass --nodownload).
-	return target.NeededForSubinclude || (state.IsOriginalTarget(target) && state.DownloadOutputs && !state.NeedTests)
+	downloadOriginalTarget := state.OutputDownload == OriginalOutputDownload && state.IsOriginalTarget(target)
+	downloadTransitiveTarget := state.OutputDownload == TransitiveOutputDownload
+	downloadLinkableTarget := state.Config.Build.DownloadLinkable && target.HasLinks(state)
+	return target.NeededForSubinclude || ((downloadOriginalTarget || downloadTransitiveTarget) && !state.NeedTests) || downloadLinkableTarget
 }
 
 // ShouldRebuild returns true if we should force a rebuild of this target (i.e. the user
@@ -1008,58 +1034,71 @@ func (state *BuildState) ForTarget(target *BuildTarget) *BuildState {
 
 // ForArch creates a copy of this BuildState for a different architecture.
 func (state *BuildState) ForArch(arch cli.Arch) *BuildState {
-	// Check if we've got this one already.
-	// N.B. This implicitly handles the case of the host architecture
-	if s := state.findArch(arch); s != nil {
-		return s
-	}
-	// Copy with the architecture-specific config file.
-	// This is slightly wrong in that other things (e.g. user-specified command line overrides) should
-	// in fact take priority over this, but that's a lot more fiddly to get right.
-	s := state.forConfig(".plzconfig_" + arch.String())
-	s.Arch = arch
-	return s
-}
-
-// findArch returns an existing state for the given architecture, if one exists.
-func (state *BuildState) findArch(arch cli.Arch) *BuildState {
 	state.progress.mutex.Lock()
 	defer state.progress.mutex.Unlock()
+
 	for _, s := range state.progress.allStates {
 		if s.Arch == arch {
 			return s
 		}
 	}
-	return nil
-}
 
-// forConfig creates a copy of this BuildState based on the given config files.
-func (state *BuildState) forConfig(config ...string) *BuildState {
-	state.progress.mutex.Lock()
-	defer state.progress.mutex.Unlock()
+	// Copy with the architecture-specific config file.
+	// This is slightly wrong in that other things (e.g. user-specified command line overrides) should
+	// in fact take priority over this, but that's a lot more fiddly to get right.
+
 	// Duplicate & alter configuration
-	c := state.Config.copyConfig()
-	for _, filename := range config {
-		if err := readConfigFile(c, filename); err != nil {
-			log.Fatalf("Failed to read config file %s: %s", filename, err)
-		}
-	}
 	s := &BuildState{}
 	*s = *state
-	s.Config = c
+
+	config := state.Config.copyConfig()
+	readConfigFiles(config, []string{".plzconfig_" + arch.String()})
+
+	s.Config = config
+	s.Arch = arch
+
+	s.Parser.NewParser(s)
 	state.progress.allStates = append(state.progress.allStates, s)
+
 	return s
 }
 
+func readConfigFiles(config *Configuration, configFiles []string) {
+	for _, filename := range configFiles {
+		if err := readConfigFile(config, filename, false); err != nil {
+			log.Fatalf("Failed to read config file %s: %s", filename, err)
+		}
+	}
+}
+
 // ForSubrepo creates a new state for the given subrepo
-func (state *BuildState) ForSubrepo(name string, config ...string) *BuildState {
+func (state *BuildState) ForSubrepo(name string, bazelCompat bool, config ...string) *BuildState {
+	state.progress.mutex.Lock()
+	defer state.progress.mutex.Unlock()
+
 	for _, s := range state.progress.allStates {
 		if s.CurrentSubrepo == name {
 			return s
 		}
 	}
-	s := state.forConfig(config...)
+
+	s := &BuildState{}
+	*s = *state
+
+	s.Config = state.Config.copyConfig()
+	readConfigFiles(s.Config, config)
+
 	s.CurrentSubrepo = name
+	s.ParentState = state
+
+	if bazelCompat {
+		s.Config.Bazel.Compatibility = true
+		s.Config.Parse.BuildFileName = append(state.Config.Parse.BuildFileName, "BUILD.bazel")
+	}
+
+	s.Parser.NewParser(s)
+	state.progress.allStates = append(state.progress.allStates, s)
+
 	return s
 }
 
@@ -1120,13 +1159,27 @@ func newBlake3() hash.Hash {
 	return blake3.New(32, nil)
 }
 
-func sandboxTool(config *Configuration) string {
+func newXXHash() hash.Hash {
+	return xxhash.New()
+}
+
+func executorFromConfig(config *Configuration) *process.Executor {
 	tool := config.Sandbox.Tool
-	if filepath.IsAbs(tool) {
-		return tool
+	if !filepath.IsAbs(tool) {
+		var err error
+		tool, err = LookBuildPath(tool, config)
+		if err != nil && (config.Sandbox.Build || config.Sandbox.Test) {
+			log.Warningf("Can't find sandbox tool %v on the path: %v", config.Sandbox.Tool, err)
+		}
+	} else if !fs.FileExists(tool) {
+		log.Warningf("Sandbox tool doesn't exist: %v", tool)
 	}
-	sandboxTool, _ := LookBuildPath(tool, config)
-	return sandboxTool
+
+	return process.NewSandboxingExecutor(
+		config.Sandbox.Tool == "" && (config.Sandbox.Build || config.Sandbox.Test),
+		process.NamespacingPolicy(config.Sandbox.Namespace),
+		tool,
+	)
 }
 
 // NewBuildState constructs and returns a new BuildState.
@@ -1146,14 +1199,12 @@ func NewBuildState(config *Configuration) *BuildState {
 			"crc32":  fs.NewPathHasher(RepoRoot, config.Build.Xattrs, newCRC32, "crc32"),
 			"crc64":  fs.NewPathHasher(RepoRoot, config.Build.Xattrs, newCRC64, "crc64"),
 			"blake3": fs.NewPathHasher(RepoRoot, config.Build.Xattrs, newBlake3, "blake3"),
+			"xxhash": fs.NewPathHasher(RepoRoot, config.Build.Xattrs, newXXHash, "xxhash"),
 		},
-		ProcessExecutor: process.NewSandboxingExecutor(
-			config.Sandbox.Tool == "" && (config.Sandbox.Build || config.Sandbox.Test),
-			process.NamespacingPolicy(config.Sandbox.Namespace),
-			sandboxTool(config),
-		),
+		ProcessExecutor: executorFromConfig(config),
 		StartTime:       startTime,
 		Config:          config,
+		RepoConfig:      config,
 		VerifyHashes:    true,
 		NeedBuild:       true,
 		XattrsSupported: config.Build.Xattrs,

@@ -11,14 +11,9 @@ import (
 
 func TestPackageName(t *testing.T) {
 	s := &scope{pkg: &core.Package{Name: "test/package"}}
-	assert.Equal(t, "test/package", packageName(s, []pyObject{pyNone{}}).String())
-	assert.Equal(t, "test/package", packageName(s, []pyObject{pyString(":test")}).String())
-	assert.Equal(t, "foo/bar", packageName(s, []pyObject{pyString("//foo/bar:test")}).String())
-
-	s = &scope{subincludeLabel: &core.BuildLabel{PackageName: "test/package"}}
-	assert.Equal(t, "test/package", packageName(s, []pyObject{pyNone{}}).String())
-	assert.Equal(t, "test/package", packageName(s, []pyObject{pyString(":test")}).String())
-	assert.Equal(t, "foo/bar", packageName(s, []pyObject{pyString("//foo/bar:test")}).String())
+	assert.Equal(t, "test/package", packageName(s, []pyObject{pyNone{}, pyNone{}}).String())
+	assert.Equal(t, "test/package", packageName(s, []pyObject{pyString(":test"), pyNone{}}).String())
+	assert.Equal(t, "foo/bar", packageName(s, []pyObject{pyString("//foo/bar:test"), pyNone{}}).String())
 }
 
 func TestGetLabels(t *testing.T) {
@@ -45,4 +40,12 @@ func TestGetLabels(t *testing.T) {
 	ls = getLabels(s, []pyObject{pyString(":bar"), pyString("cc:ld:"), False, False}).(pyList)
 	assert.Len(t, ls, 1)
 	assert.Equal(t, pyString("-pthread"), ls[0])
+}
+
+func TestTag(t *testing.T) {
+	res := tag(nil, []pyObject{pyString("name"), pyString("foo")})
+	assert.Equal(t, res.String(), "_name#foo")
+
+	res = tag(nil, []pyObject{res, pyString("bar")})
+	assert.Equal(t, res.String(), "_name#foo_bar")
 }

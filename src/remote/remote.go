@@ -23,7 +23,7 @@ import (
 	fpb "github.com/bazelbuild/remote-apis/build/bazel/remote/asset/v1"
 	pb "github.com/bazelbuild/remote-apis/build/bazel/remote/execution/v2"
 	"github.com/bazelbuild/remote-apis/build/bazel/semver"
-	"github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/genproto/googleapis/longrunning"
 	"google.golang.org/grpc"
@@ -36,12 +36,20 @@ import (
 
 	"github.com/thought-machine/please/src/core"
 	"github.com/thought-machine/please/src/fs"
+	"github.com/thought-machine/please/src/metrics"
 )
 
 var log = logging.MustGetLogger("remote")
 
 // The API version we support.
 var apiVersion = semver.SemVer{Major: 2}
+
+var remoteCacheReadDuration = metrics.NewHistogram(
+	"remote",
+	"cache_read_duration",
+	"Time taken to read the remote cache, in milliseconds",
+	metrics.ExponentialBuckets(1, 2, 10), // 10 buckets, starting at 1ms and doubling in width.
+)
 
 // A Client is the interface to the remote API.
 //
@@ -391,8 +399,11 @@ func (c *Client) build(tid int, target *core.BuildTarget) (*core.BuildMetadata, 
 	}
 	metadata, ar, err := c.execute(tid, target, command, stampedDigest, false, needStdout)
 	if target.Stamp && err == nil {
-		// Store results under unstamped digest too.
-		c.locallyCacheResults(target, unstampedDigest, metadata, ar)
+		err = c.verifyActionResult(target, command, unstampedDigest, ar, c.state.Config.Remote.VerifyOutputs, false)
+		if err == nil {
+			// Store results under unstamped digest too.
+			c.locallyCacheResults(target, unstampedDigest, metadata, ar)
+		}
 		c.client.UpdateActionResult(context.Background(), &pb.UpdateActionResultRequest{
 			InstanceName: c.instance,
 			ActionDigest: unstampedDigest,
@@ -447,6 +458,16 @@ func (c *Client) reallyDownload(target *core.BuildTarget, digest *pb.Digest, ar 
 }
 
 func (c *Client) downloadActionOutputs(ctx context.Context, ar *pb.ActionResult, target *core.BuildTarget) error {
+	// Ensure none of the outputs have temp suffixes on them.
+	for _, f := range ar.OutputFiles {
+		f.Path = target.GetRealOutput(f.Path)
+	}
+	for _, d := range ar.OutputDirectories {
+		d.Path = target.GetRealOutput(d.Path)
+	}
+	for _, s := range ar.OutputSymlinks {
+		s.Path = target.GetRealOutput(s.Path)
+	}
 	// We can download straight into the out dir if there are no outdirs to worry about
 	if len(target.OutputDirectories) == 0 {
 		_, err := c.client.DownloadActionOutputs(ctx, ar, target.OutDir(), c.fileMetadataCache)
@@ -551,12 +572,14 @@ func (c *Client) retrieveResults(target *core.BuildTarget, command *pb.Command, 
 		return metadata, ar
 	}
 	// Now see if it is cached on the remote server
+	start := time.Now()
 	if ar, err := c.client.GetActionResult(context.Background(), &pb.GetActionResultRequest{
 		InstanceName: c.instance,
 		ActionDigest: digest,
 		InlineStdout: needStdout,
 	}); err == nil {
 		// This action already exists and has been cached.
+		remoteCacheReadDuration.Observe(float64(time.Since(start).Milliseconds()))
 		if metadata, err := c.buildMetadata(ar, needStdout, false); err == nil {
 			log.Debug("Got remotely cached results for %s %s", target.Label, c.actionURL(digest, true))
 			if command != nil {
@@ -907,8 +930,9 @@ func (c *Client) buildTextFile(state *core.BuildState, target *core.BuildTarget,
 		entry := uploadinfo.EntryFromBlob([]byte(content))
 		ch <- entry
 		ar.OutputFiles = append(ar.OutputFiles, &pb.OutputFile{
-			Path:   command.OutputPaths[0],
-			Digest: entry.Digest.ToProto(),
+			Path:         command.OutputPaths[0],
+			Digest:       entry.Digest.ToProto(),
+			IsExecutable: target.IsBinary,
 		})
 		return nil
 	}); err != nil {
