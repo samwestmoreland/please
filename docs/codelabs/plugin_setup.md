@@ -14,10 +14,10 @@ Duration: 4
 ### Prerequisites
 - You must have Please installed: [Install please](https://please.build/quickstart.html)
 
-### What You’ll Learn
+### What you'll learn
 - How to write your own custom plugin to use with Please
 
-### what if I get stuck?
+### What if I get stuck?
 
 The final result of running through this codelab can be found
 [here](https://github.com/thought-machine/please-codelabs/tree/main/getting_started_python) for reference. If you really
@@ -26,21 +26,12 @@ get stuck you can find us on [gitter](https://gitter.im/please-build/Lobby)!
 ## Initialising your project
 Duration: 2
 
-Let's create a new project:
+Let's create a new Please project:
 ```
-$ mkdir getting_started_python && cd getting_started_python
+$ mkdir my_please_plugin && cd my_please_plugin
 $ plz init --no_prompt
 ```
 
-### A note about your Please PATH
-Please doesn't use your host system's `PATH` variable. By default, Please uses `/usr/local/bin:/usr/bin:/bin`. If Python
-isn't in this path, you will need to add the following to `.plzconfig`:
-```
-[build]
-path = $YOUR_PYTHON_INSTALL_HERE:/usr/local/bin:/usr/bin:/bin
-```
-
-### So what just happened?
 You will see this has created a number of files in your working folder:
 ```
 $ tree -a
@@ -49,12 +40,9 @@ $ tree -a
   └── .plzconfig
 ```
 
-The `pleasew` script is a wrapper script that will automatically install Please if it's not already! This
-means Please projects are portable and can always be built via
-`git clone https://... example_module && cd example_module && ./pleasew build`.
+The `pleasew` script is a wrapper script that will automatically install Please if it's not installed already! This means Please projects are portable and can always be built via `git clone https://... example_module && cd example_module && ./pleasew build`.
 
-Finally, `.plzconfig` contains the project configuration for Please; read the [config](/config.html) documentation for
-more information on configuration.
+Finally, `.plzconfig` contains the project configuration for Please; read the [config](/config.html) documentation for more information on configuration.
 
 ## Hello, world!
 Duration: 3
