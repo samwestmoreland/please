@@ -55,18 +55,31 @@ There are some first-class plugins that are supported and maintained by the Plea
     </h2>
 
     <p>
-        The cc-rules plugin provides rules for building C/C++ code.
+        The cc-rules plugin provides rules for building C/C++ targets.
     </p>
 
-  <!-- prettier-ignore -->
-  {{ template "lexicon_entry.html" .Named "c_library" }}
-  {{ template "lexicon_entry.html" .Named "c_static_library" }}
-  {{ template "lexicon_entry.html" .Named "c_shared_object" }}
-  {{ template "lexicon_entry.html" .Named "c_binary" }}
-  {{ template "lexicon_entry.html" .Named "c_test" }}
-  {{ template "lexicon_entry.html" .Named "c_embed_binary" }}
-  {{ template "lexicon_entry.html" .Named "c_object" }}
-  {{ template "lexicon_entry.html" .Named "cc_module" }}
+    <p>
+      The process of building C or C++ code is fairly complex so while these rules
+      do their best to keep things reasonably simple, there's a lot of scope for
+      things going wrong.
+    </p>
+
+    <p>
+      There is very little difference between the <code class="code">c_</code> and
+      <code class="code">cc_</code> variants of each rule, in nearly all cases
+      they simply use different tools and flags in the
+      <a class="copy-link" href="/config.html#cpp">relevant config section</a>.
+    </p>
+
+    <!-- prettier-ignore -->
+    {{ template "lexicon_entry.html" .Named "c_library" }}
+    {{ template "lexicon_entry.html" .Named "c_static_library" }}
+    {{ template "lexicon_entry.html" .Named "c_shared_object" }}
+    {{ template "lexicon_entry.html" .Named "c_binary" }}
+    {{ template "lexicon_entry.html" .Named "c_test" }}
+    {{ template "lexicon_entry.html" .Named "c_embed_binary" }}
+    {{ template "lexicon_entry.html" .Named "c_object" }}
+    {{ template "lexicon_entry.html" .Named "cc_module" }}
 </section>
 
 <section class="mt4">
