@@ -804,7 +804,7 @@ func TestFStringConcat(t *testing.T) {
 
 func TestFStringImplicitStringConcat(t *testing.T) {
 	str := "str('testing that we can carry these ' f'over {multiple} lines' r' \\n')"
-	prog, err := newParser().parseAndHandleErrors(strings.NewReader(strings.ReplaceAll(str, "\t", "")))
+	prog, err := newParser().parseAndHandleErrors(strings.NewReader(strings.ReplaceAll(str, "\t", "")), nil)
 	require.NoError(t, err)
 
 	fString := prog[0].Ident.Action.Call.Arguments[0].Value.Val.FString
@@ -816,7 +816,7 @@ func TestFStringImplicitStringConcat(t *testing.T) {
 // F strings should report a sensible error when the {} aren't complete
 func TestFStringIncompleteError(t *testing.T) {
 	str := "s = f'some {' '.join([])}'"
-	_, err := newParser().parseAndHandleErrors(strings.NewReader(str))
+	_, err := newParser().parseAndHandleErrors(strings.NewReader(str), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Unterminated brace in fstring")
 }
