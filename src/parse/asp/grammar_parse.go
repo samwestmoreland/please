@@ -56,8 +56,8 @@ type parser struct {
 }
 
 // parseFileInput is the only external entry point to this class, it parses a file into a FileInput structure.
-func parseFileInput(r io.Reader, heap *arena.Arena) (input *FileInput, err error) {
-	input = &FileInput{}
+func parseFileInput(r io.Reader, a *arena.Arena) (input *FileInput, err error) {
+	input = heap.New[FileInput](a)
 	// The rest of the parser functions signal unhappiness by panicking, we
 	// recover any such failures here and convert to an error.
 	defer func() {
@@ -67,9 +67,9 @@ func parseFileInput(r io.Reader, heap *arena.Arena) (input *FileInput, err error
 		}
 	}()
 
-	p := &parser{l: newLexer(r), heap: heap}
+	p := &parser{l: newLexer(r, a), heap: a}
 	for tok := p.l.Peek(); tok.Type != EOF; tok = p.l.Peek() {
-		input.Statements = append(input.Statements, p.parseStatement())
+		input.Statements = heap.Append(a, input.Statements, p.parseStatement())
 	}
 	return input, nil
 }
@@ -127,7 +127,7 @@ func (p *parser) oneof(expectedTypes ...rune) Token {
 			return tok
 		}
 	}
-	p.fail(tok, "unexpected token %s, expected one of %s", tok.Value, strings.Join(reverseSymbols(expectedTypes), " "))
+	p.fail(tok, "unexpected token %s, expected one of %s", tok.Value, strings.Join(reverseSymbols(p.heap, expectedTypes), " "))
 	return Token{}
 }
 
@@ -198,7 +198,7 @@ func (p *parser) parseStatement() *Statement {
 func (p *parser) parseStatements() []*Statement {
 	stmts := []*Statement{}
 	for p.anythingBut(Unindent) {
-		stmts = append(stmts, p.parseStatement())
+		stmts = heap.Append(p.heap, stmts, p.parseStatement())
 	}
 	p.next(Unindent)
 	return stmts
@@ -207,7 +207,7 @@ func (p *parser) parseStatements() []*Statement {
 func (p *parser) parseReturn() *ReturnStatement {
 	r := &ReturnStatement{}
 	for p.anythingBut(EOL) {
-		r.Values = append(r.Values, p.parseExpression())
+		r.Values = heap.Append(p.heap, r.Values, p.parseExpression())
 		if !p.optional(',') {
 			break
 		}
@@ -226,7 +226,7 @@ func (p *parser) parseFuncDef() *FuncDef {
 	}
 	p.next('(')
 	for p.anythingBut(')') {
-		fd.Arguments = append(fd.Arguments, p.parseArgument())
+		fd.Arguments = heap.Append(p.heap, fd.Arguments, p.parseArgument())
 		if !p.optional(',') {
 			break
 		}
@@ -273,7 +273,7 @@ func (p *parser) parseArgument() Argument {
 		// Type annotations
 		for {
 			tok = p.oneofval("bool", "str", "int", "list", "dict", "function", "config")
-			a.Type = append(a.Type, tok.Value)
+			a.Type = heap.Append(p.heap, a.Type, tok.Value)
 			if !p.optional('|') {
 				break
 			}
@@ -287,7 +287,7 @@ func (p *parser) parseArgument() Argument {
 		// Argument aliases
 		for {
 			tok = p.next(Ident)
-			a.Aliases = append(a.Aliases, tok.Value)
+			a.Aliases = heap.Append(p.heap, a.Aliases, tok.Value)
 			if !p.optional('&') {
 				break
 			}
@@ -316,7 +316,7 @@ func (p *parser) parseIf() *IfStatement {
 		p.next(':')
 		p.next(EOL)
 		elif.Statements = p.parseStatements()
-		i.Elif = append(i.Elif, elif)
+		i.Elif = heap.Append(p.heap, i.Elif, elif)
 	}
 	if p.optionalv("else") {
 		p.next(':')
@@ -345,7 +345,7 @@ func (p *parser) parseIdentList() []string {
 	ret := []string{p.next(Ident).Value} // First one is compulsory
 	for tok := p.l.Peek(); tok.Type == ','; tok = p.l.Peek() {
 		p.l.Next()
-		ret = append(ret, p.next(Ident).Value)
+		ret = heap.Append(p.heap, ret, p.next(Ident).Value)
 	}
 	return ret
 }
@@ -409,19 +409,19 @@ func (p *parser) parseUnconditionalExpressionInPlace(e *Expression) {
 			}
 		}
 		o.Expr = p.parseUnconditionalExpression()
-		e.Op = append(e.Op, o)
+		e.Op = heap.Append(p.heap, e.Op, o)
 		if len(o.Expr.Op) > 0 {
 			if op := o.Expr.Op[0].Op; op == And || op == Or || op == Is {
 				// Hoist logical operator back up here to fix precedence. This is a bit of a hack and
 				// might not be perfect in all cases...
-				e.Op = append(e.Op, o.Expr.Op...)
+				e.Op = heap.Append(p.heap, e.Op, o.Expr.Op...)
 				o.Expr.Op = nil
 			}
 		}
 	}
 }
 
-func concatStrings(lhs *ValueExpression, rhs *ValueExpression) *ValueExpression {
+func (p *parser) concatStrings(lhs *ValueExpression, rhs *ValueExpression) *ValueExpression {
 	// If they're both fStrngs
 	if lhs.FString != nil && rhs.FString != nil {
 		// If rhs has no variables, handle that
@@ -432,7 +432,7 @@ func concatStrings(lhs *ValueExpression, rhs *ValueExpression) *ValueExpression 
 
 		// Otherwise merge the vars
 		rhs.FString.Vars[0].Prefix = lhs.FString.Suffix + rhs.FString.Vars[0].Prefix
-		rhs.FString.Vars = append(lhs.FString.Vars, rhs.FString.Vars...)
+		rhs.FString.Vars = heap.Append(p.heap, lhs.FString.Vars, rhs.FString.Vars...)
 
 		return rhs
 	}
@@ -467,7 +467,7 @@ func (p *parser) parseValueExpression() *ValueExpression {
 		}
 
 		if p.l.Peek().Type == String {
-			return concatStrings(ve, p.parseValueExpression())
+			return p.concatStrings(ve, p.parseValueExpression())
 		}
 	} else if tok.Type == Int {
 		p.assert(len(tok.Value) < 19, tok, "int literal is too large: %s", tok)
@@ -502,7 +502,7 @@ func (p *parser) parseValueExpression() *ValueExpression {
 
 	tok = p.l.Peek()
 	for tok.Type == '[' {
-		ve.Slices = append(ve.Slices, p.parseSlice())
+		ve.Slices = heap.Append(p.heap, ve.Slices, p.parseSlice())
 		tok = p.l.Peek()
 	}
 	if p.optional('.') {
@@ -566,13 +566,13 @@ func (p *parser) parseIdentStatement() *IdentStatement {
 
 func (p *parser) parseIdentExpr() *IdentExpr {
 	identTok := p.next(Ident)
-	ie := &IdentExpr{
-		Name: identTok.Value,
-		Pos:  identTok.Pos,
-	}
+	ie := heap.New[IdentExpr](p.heap)
+	ie.Name = identTok.Value
+	ie.Pos = identTok.Pos
+
 	for tok := p.l.Peek(); tok.Type == '.' || tok.Type == '('; tok = p.l.Peek() {
 		tok := p.l.Next()
-		action := IdentExprAction{}
+		action := heap.New[IdentExprAction](p.heap)
 		if tok.Type == '.' {
 			action.Property = p.parseIdentExpr()
 			ie.EndPos = action.Property.EndPos
@@ -580,7 +580,7 @@ func (p *parser) parseIdentExpr() *IdentExpr {
 			action.Call = p.parseCall()
 			ie.EndPos = p.endPos
 		}
-		ie.Action = append(ie.Action, action)
+		ie.Action = heap.Append(p.heap, ie.Action, *action)
 	}
 	// In case the Ident is a variable name, we assign the endPos to the end of current token.
 	// see test_data/unary_op.build
@@ -592,10 +592,10 @@ func (p *parser) parseIdentExpr() *IdentExpr {
 
 func (p *parser) parseCall() *Call {
 	// The leading ( has already been consumed (because that fits better at the various call sites)
-	c := &Call{}
+	c := heap.New[Call](p.heap)
 	names := map[string]bool{}
 	for tok := p.l.Peek(); tok.Type != ')'; tok = p.l.Peek() {
-		arg := CallArgument{}
+		arg := heap.New[CallArgument](p.heap)
 		if tok.Type == Ident && p.l.AssignFollows() {
 			// Named argument.
 			arg.Pos = tok.Pos
@@ -606,7 +606,7 @@ func (p *parser) parseCall() *Call {
 			names[arg.Name] = true
 		}
 		p.parseExpressionInPlace(&arg.Value)
-		c.Arguments = append(c.Arguments, arg)
+		c.Arguments = heap.Append(p.heap, c.Arguments, *arg)
 		if !p.optional(',') {
 			break
 		}
@@ -641,7 +641,7 @@ func (p *parser) parseDict() *Dict {
 		p.parseExpressionInPlace(&di.Key)
 		p.next(':')
 		p.parseExpressionInPlace(&di.Value)
-		d.Items = append(d.Items, di)
+		d.Items = heap.Append(p.heap, d.Items, di)
 		if !p.optional(',') {
 			break
 		}
@@ -675,12 +675,13 @@ func (p *parser) parseSlice() *Slice {
 }
 
 func (p *parser) parseComprehension() *Comprehension {
-	c := &Comprehension{}
+	c := heap.New[Comprehension](p.heap)
 	p.nextv("for")
 	c.Names = p.parseIdentList()
 	p.nextv("in")
 	c.Expr = p.parseUnconditionalExpression()
 	if p.optionalv("for") {
+		c.Second = arena.New[SecondComprehension](p.heap)
 		c.Second = &SecondComprehension{
 			Names: p.parseIdentList(),
 		}
@@ -694,7 +695,7 @@ func (p *parser) parseComprehension() *Comprehension {
 }
 
 func (p *parser) parseLambda() *Lambda {
-	l := &Lambda{}
+	l := heap.New[Lambda](p.heap)
 	p.nextv("lambda")
 	for tok := p.l.Peek(); tok.Type == Ident; tok = p.l.Peek() {
 		p.l.Next()
@@ -702,7 +703,7 @@ func (p *parser) parseLambda() *Lambda {
 		if p.optional('=') {
 			arg.Value = p.parseExpression()
 		}
-		l.Arguments = append(l.Arguments, arg)
+		l.Arguments = heap.Append(p.heap, l.Arguments, arg)
 		if !p.optional(',') {
 			break
 		}
@@ -713,7 +714,7 @@ func (p *parser) parseLambda() *Lambda {
 }
 
 func (p *parser) parseFString() *FString {
-	f := &FString{}
+	f := heap.New[FString](p.heap)
 	tok := p.next(String)
 	s := tok.Value[2 : len(tok.Value)-1] // Strip preceding f" and trailing "
 	p.endPos = tok.EndPos()
@@ -727,7 +728,7 @@ func (p *parser) parseFString() *FString {
 		idx = strings.IndexByte(s, '}')
 		p.assert(idx != -1, tok, "Unterminated brace in fstring")
 		v.Var = strings.Split(s[:idx], ".")
-		f.Vars = append(f.Vars, v)
+		f.Vars = heap.Append(p.heap, f.Vars, v)
 		s = s[idx+1:]
 		tok.Pos += Position(idx + 1)
 	}

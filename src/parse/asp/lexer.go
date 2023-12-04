@@ -1,6 +1,8 @@
 package asp
 
 import (
+	"arena"
+	"github.com/thought-machine/please/src/parse/asp/heap"
 	"io"
 	"unicode"
 	"unicode/utf8"
@@ -53,22 +55,24 @@ func NameOfReader(r io.Reader) string {
 }
 
 // newLexer creates a new lex instance.
-func newLexer(r io.Reader) *lex {
+func newLexer(r io.Reader, a *arena.Arena) *lex {
 	// Read the entire file upfront to avoid bufio etc.
 	// This should work OK as long as BUILD files are relatively small.
 	b, err := io.ReadAll(r)
 	if err != nil {
 		fail(NameOfReader(r), 0, err.Error())
 	}
+
 	// If the file doesn't end in a newline, we will reject it with an "unexpected end of file"
 	// error. That's a bit crap so quietly fix it up here.
 	if len(b) > 0 && b[len(b)-1] != '\n' {
-		b = append(b, '\n')
+		b = heap.Append(a, b, '\n')
 	}
 	l := &lex{
-		bytes:    append(b, 0, 0), // Null-terminating the buffer makes things easier later.
+		bytes:    heap.Append(a, b, 0, 0), // Null-terminating the buffer makes things easier later.
 		filename: NameOfReader(r),
 		indents:  []int{0},
+		arena: a,
 	}
 	l.Next() // Initial value is zero, this forces it to populate itself.
 	// Discard any leading newlines, they are just an annoyance.
@@ -101,6 +105,8 @@ type lex struct {
 	indents []int
 	// Remember whether the last token we output was an end-of-line so we don't emit multiple in sequence.
 	lastEOL bool
+	// arena is a memory arena to allocate with
+	arena *arena.Arena
 }
 
 // reverseSymbol looks up a symbol's name from the lexer.
@@ -125,8 +131,8 @@ func reverseSymbol(sym rune) string {
 }
 
 // reverseSymbols looks up a series of symbol's names from the lexer.
-func reverseSymbols(syms []rune) []string {
-	ret := make([]string, len(syms))
+func reverseSymbols(a *arena.Arena, syms []rune) []string {
+	ret := arena.MakeSlice[string](a, len(syms), cap(syms))
 	for i, sym := range syms {
 		ret[i] = reverseSymbol(sym)
 	}
