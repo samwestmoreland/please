@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+
+	"github.com/thought-machine/please/src/parse/asp/heap"
 )
 
 // keywords are the list of reserved keywords in the language. They can't be assigned to.
@@ -617,12 +619,7 @@ func (p *parser) parseList(opening, closing rune) *List {
 	l := &List{}
 	p.next(opening)
 	for tok := p.l.Peek(); tok.Type != closing; tok = p.l.Peek() {
-		if p.heap != nil && cap(l.Values) == len(l.Values) {
-			newSlice := arena.MakeSlice[*Expression](p.heap, 0, len(l.Values)*2)
-			l.Values = append(newSlice, l.Values...)
-		}
-
-		l.Values = append(l.Values, p.parseExpression())
+		l.Values = heap.Append(p.heap, l.Values, p.parseExpression())
 
 		if !p.optional(',') {
 			break
