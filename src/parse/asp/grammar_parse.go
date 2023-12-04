@@ -1,6 +1,7 @@
 package asp
 
 import (
+	"arena"
 	"io"
 	"runtime/debug"
 	"strconv"
@@ -49,10 +50,11 @@ var keywords = map[string]struct{}{
 type parser struct {
 	l      *lex
 	endPos Position
+	heap   *arena.Arena
 }
 
 // parseFileInput is the only external entry point to this class, it parses a file into a FileInput structure.
-func parseFileInput(r io.Reader) (input *FileInput, err error) {
+func parseFileInput(r io.Reader, heap *arena.Arena) (input *FileInput, err error) {
 	input = &FileInput{}
 	// The rest of the parser functions signal unhappiness by panicking, we
 	// recover any such failures here and convert to an error.
@@ -63,7 +65,7 @@ func parseFileInput(r io.Reader) (input *FileInput, err error) {
 		}
 	}()
 
-	p := &parser{l: newLexer(r)}
+	p := &parser{l: newLexer(r), heap: heap}
 	for tok := p.l.Peek(); tok.Type != EOF; tok = p.l.Peek() {
 		input.Statements = append(input.Statements, p.parseStatement())
 	}
@@ -615,7 +617,13 @@ func (p *parser) parseList(opening, closing rune) *List {
 	l := &List{}
 	p.next(opening)
 	for tok := p.l.Peek(); tok.Type != closing; tok = p.l.Peek() {
+		if p.heap != nil && cap(l.Values) == len(l.Values) {
+			newSlice := arena.MakeSlice[*Expression](p.heap, 0, len(l.Values)*2)
+			l.Values = append(newSlice, l.Values...)
+		}
+
 		l.Values = append(l.Values, p.parseExpression())
+
 		if !p.optional(',') {
 			break
 		}

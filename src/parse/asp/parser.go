@@ -4,6 +4,7 @@
 package asp
 
 import (
+	"arena"
 	"bytes"
 	"io"
 	"os"
@@ -106,7 +107,9 @@ func (p *Parser) ParseReader(pkg *core.Package, r io.ReadSeeker, forLabel, depen
 	p.limiter.Acquire()
 	defer p.limiter.Release()
 
-	stmts, err := p.parseAndHandleErrors(r)
+	a := arena.NewArena()
+	defer a.Free()
+	stmts, err := p.parseAndHandleErrors(r, a)
 	if err != nil {
 		return false, err
 	}
@@ -125,7 +128,7 @@ func (p *Parser) parse(filename string) ([]*Statement, error) {
 	if err != nil {
 		return nil, err
 	}
-	stmts, err := p.parseAndHandleErrors(f)
+	stmts, err := p.parseAndHandleErrors(f, nil)
 	if err == nil {
 		// This appears a bit weird, but the error will still use the file if it's open
 		// to print additional information about it.
@@ -138,12 +141,12 @@ func (p *Parser) parse(filename string) ([]*Statement, error) {
 // The 'filename' argument is only used in case of errors so doesn't necessarily have to correspond to a real file.
 func (p *Parser) ParseData(data []byte, filename string) ([]*Statement, error) {
 	r := &namedReader{r: bytes.NewReader(data), name: filename}
-	return p.parseAndHandleErrors(r)
+	return p.parseAndHandleErrors(r, nil)
 }
 
 // parseAndHandleErrors handles errors nicely if the given input fails to parse.
-func (p *Parser) parseAndHandleErrors(r io.ReadSeeker) ([]*Statement, error) {
-	input, err := parseFileInput(r)
+func (p *Parser) parseAndHandleErrors(r io.ReadSeeker, a *arena.Arena) ([]*Statement, error) {
+	input, err := parseFileInput(r, a)
 	if err == nil {
 		return input.Statements, nil
 	}
