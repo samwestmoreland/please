@@ -831,7 +831,7 @@ func (s *scope) interpretList(expr *List) pyList {
 		if len(expr.Values) == 1 {
 			heap.Append[pyObject](s.heap, ret, cs.interpretExpression(expr.Values[0]))
 		} else {
-			heap.Append[pyObject](s.heap, ret, cs.evaluateExpressions(expr.Values)...)
+			heap.Append[pyObject](s.heap, ret, pyList(cs.evaluateExpressions(expr.Values)))
 		}
 	})
 	return ret
