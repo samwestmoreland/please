@@ -94,7 +94,7 @@ func (p *Parser) RegisterPreload(label core.BuildLabel) error {
 	defer p.limiter.Release()
 
 	// This is a throw away scope. We're just doing this to avoid race conditions setting this on the main scope.
-	s := p.interpreter.scope.newScope(nil, p.interpreter.scope.mode, "", 0)
+	s := p.interpreter.scope.newScope(nil, nil, p.interpreter.scope.mode, "", 0)
 	s.config = p.interpreter.scope.config.Copy()
 	s.Set("CONFIG", s.config)
 	return p.interpreter.preloadSubinclude(s, label)

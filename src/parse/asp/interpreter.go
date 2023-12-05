@@ -1,6 +1,7 @@
 package asp
 
 import (
+	"arena"
 	"fmt"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"github.com/thought-machine/please/src/cmap"
 	"github.com/thought-machine/please/src/core"
 	"github.com/thought-machine/please/src/fs"
+	"github.com/thought-machine/please/src/parse/asp/heap"
 )
 
 // An interpreter holds the package-independent state about our parsing process.
@@ -35,6 +37,7 @@ func newInterpreter(state *core.BuildState, p *Parser) *interpreter {
 	s := &scope{
 		state:  state,
 		locals: map[string]pyObject{},
+		heap:   arena.NewArena(),
 	}
 	// If we're creating an interpreter for a subrepo, we should share the subinclude cache.
 	var subincludes *cmap.Map[string, pyDict]
@@ -279,6 +282,7 @@ type scope struct {
 	filename        string
 	state           *core.BuildState
 	pkg             *core.Package
+	heap            *arena.Arena
 	subincludeLabel *core.BuildLabel
 	parsingFor      *parseTarget
 	parent          *scope
@@ -382,21 +386,22 @@ func (s *scope) subincludePackage() *core.Package {
 
 // NewScope creates a new child scope of this one.
 func (s *scope) NewScope(filename string, mode core.ParseMode) *scope {
-	return s.newScope(s.pkg, mode, filename, 0)
+	return s.newScope(s.pkg, s.heap, mode, filename, 0)
 }
 
 // NewPackagedScope creates a new child scope of this one pointing to the given package.
 // hint is a size hint for the new set of locals.
 func (s *scope) NewPackagedScope(pkg *core.Package, mode core.ParseMode, hint int) *scope {
-	return s.newScope(pkg, mode, pkg.Filename, hint)
+	return s.newScope(pkg, nil, mode, pkg.Filename, hint)
 }
 
-func (s *scope) newScope(pkg *core.Package, mode core.ParseMode, filename string, hint int) *scope {
-	s2 := &scope{
+func (s *scope) newScope(pkg *core.Package, heap *arena.Arena, mode core.ParseMode, filename string, hint int) *scope {
+	childScope := &scope{
 		filename:    filename,
 		interpreter: s.interpreter,
 		state:       s.state,
 		pkg:         pkg,
+		heap:        heap,
 		parsingFor:  s.parsingFor,
 		parent:      s,
 		locals:      make(pyDict, hint),
@@ -405,9 +410,9 @@ func (s *scope) newScope(pkg *core.Package, mode core.ParseMode, filename string
 		mode:        mode,
 	}
 	if pkg != nil && pkg.Subrepo != nil && pkg.Subrepo.State != nil {
-		s2.state = pkg.Subrepo.State
+		childScope.state = pkg.Subrepo.State
 	}
-	return s2
+	return childScope
 }
 
 // Error emits an error that stops further interpretation.
@@ -824,9 +829,9 @@ func (s *scope) interpretList(expr *List) pyList {
 	ret := make(pyList, 0, len(l))
 	cs.evaluateComprehension(l, expr.Comprehension, func(li pyObject) {
 		if len(expr.Values) == 1 {
-			ret = append(ret, cs.interpretExpression(expr.Values[0]))
+			heap.Append[pyObject](s.heap, ret, cs.interpretExpression(expr.Values[0]))
 		} else {
-			ret = append(ret, pyList(cs.evaluateExpressions(expr.Values)))
+			heap.Append[pyObject](s.heap, ret, cs.evaluateExpressions(expr.Values)...)
 		}
 	})
 	return ret
