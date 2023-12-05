@@ -681,7 +681,7 @@ func (p *parser) parseComprehension() *Comprehension {
 	p.nextv("in")
 	c.Expr = p.parseUnconditionalExpression()
 	if p.optionalv("for") {
-		c.Second = arena.New[SecondComprehension](p.heap)
+		c.Second = heap.New[SecondComprehension](p.heap)
 		c.Second = &SecondComprehension{
 			Names: p.parseIdentList(),
 		}

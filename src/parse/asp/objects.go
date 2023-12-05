@@ -851,9 +851,6 @@ func (c *pyConfig) IsTruthy() bool {
 }
 
 func (c *pyConfig) Property(scope *scope, name string) pyObject {
-	if name == "PLUGIN_REPOS" {
-		println()
-	}
 	if obj := c.Get(name, nil); obj != nil {
 		return obj
 	} else if f, present := scope.interpreter.configMethods[name]; present {
