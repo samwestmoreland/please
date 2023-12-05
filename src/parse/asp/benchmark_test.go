@@ -117,8 +117,6 @@ func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	p := newParserWithGo()
 	b.ResetTimer()
 
-	fmt.Printf("%v\n", b.N)
-
 	parseAndInterpretInParallel(10, b.N, true, p)
 }
 
@@ -126,7 +124,6 @@ func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
 	b.ReportAllocs()
 	p := newParserWithGo()
 	b.ResetTimer()
-	fmt.Printf("%v\n", b.N)
 
 	parseAndInterpretInParallel(10, b.N, false, p)
 }

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/thought-machine/please/src/parse/asp/heap"
 )
 
 // A pyObject is the base type for all interpreter objects.
@@ -573,10 +575,10 @@ func newPyFunc(parentScope *scope, def *FuncDef) pyObject {
 	f := &pyFunc{
 		name:       def.Name,
 		scope:      parentScope,
-		args:       make([]string, len(def.Arguments)),
+		args:       heap.MakeSlice[string](parentScope.heap, len(def.Arguments), len(def.Arguments)),
 		argIndices: make(map[string]int, len(def.Arguments)),
-		constants:  make([]pyObject, len(def.Arguments)),
-		types:      make([][]string, len(def.Arguments)),
+		constants:  heap.MakeSlice[pyObject](parentScope.heap, len(def.Arguments), len(def.Arguments)),
+		types:      heap.MakeSlice[[]string](parentScope.heap, len(def.Arguments), len(def.Arguments)),
 		code:       def.Statements,
 		kwargsonly: def.KeywordsOnly,
 		returnType: def.Return,
@@ -594,7 +596,7 @@ func newPyFunc(parentScope *scope, def *FuncDef) pyObject {
 			} else {
 				if f.defaults == nil {
 					// Minor optimisation: defaults is lazily allocated
-					f.defaults = make([]*Expression, len(def.Arguments))
+					f.defaults = heap.MakeSlice[*Expression](parentScope.heap, len(def.Arguments), len(def.Arguments))
 				}
 				f.defaults[i] = arg.Value
 			}
@@ -700,7 +702,7 @@ func (f *pyFunc) callNative(s *scope, c *Call) pyObject {
 			f.argPool.Put(args) //nolint:staticcheck
 		}()
 	} else {
-		args = make([]pyObject, len(f.args))
+		args = heap.MakeSlice[pyObject](s.heap, len(f.args), len(f.args))
 	}
 	offset := 0
 	if f.self != nil {
