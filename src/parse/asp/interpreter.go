@@ -829,9 +829,9 @@ func (s *scope) interpretList(expr *List) pyList {
 	var ret pyList = heap.MakeSlice[pyObject](s.heap, 0, len(l))
 	cs.evaluateComprehension(l, expr.Comprehension, func(li pyObject) {
 		if len(expr.Values) == 1 {
-			heap.Append[pyObject](s.heap, ret, cs.interpretExpression(expr.Values[0]))
+			ret = heap.Append[pyObject](s.heap, ret, cs.interpretExpression(expr.Values[0]))
 		} else {
-			heap.Append[pyObject](s.heap, ret, pyList(cs.evaluateExpressions(expr.Values)))
+			ret = heap.Append[pyObject](s.heap, ret, pyList(cs.evaluateExpressions(expr.Values)))
 		}
 	})
 	return ret

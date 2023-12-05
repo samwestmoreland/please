@@ -339,7 +339,11 @@ func (l pyList) Operator(operator Operator, operand pyObject) pyObject {
 		}
 		return newPyBool(operator == NotIn)
 	case Index:
-		return l[pyIndex(l, operand, false)]
+		idx := pyIndex(l, operand, false)
+		if len(l) <= int(idx) {
+			println()
+		}
+		return l[idx]
 	case LessThan:
 		// Needed for sorting.
 		l2, ok := operand.(pyList)
@@ -847,6 +851,9 @@ func (c *pyConfig) IsTruthy() bool {
 }
 
 func (c *pyConfig) Property(scope *scope, name string) pyObject {
+	if name == "PLUGIN_REPOS" {
+		println()
+	}
 	if obj := c.Get(name, nil); obj != nil {
 		return obj
 	} else if f, present := scope.interpreter.configMethods[name]; present {
