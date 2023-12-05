@@ -99,7 +99,6 @@ func parseInParallel(threads, repeats int, useArena bool) {
 				r := bytes.NewReader([]byte(code))
 				if !useArena {
 					parseFileInput(r, nil)
-					wg.Done()
 					continue
 				}
 				a := arena.NewArena()
