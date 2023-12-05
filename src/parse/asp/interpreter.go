@@ -97,7 +97,7 @@ func (i *interpreter) LoadBuiltins(filename string, contents []byte, statements 
 		_, err := i.interpretStatements(s, statements)
 		return err
 	} else if len(contents) != 0 {
-		stmts, err := i.parser.ParseData(contents, filename)
+		stmts, err := i.parser.ParseData(nil, contents, filename)
 		for _, stmt := range stmts {
 			if stmt.FuncDef != nil {
 				stmt.FuncDef.KeywordsOnly = !whitelistedKwargs(stmt.FuncDef.Name, filename)
@@ -822,11 +822,11 @@ func (s *scope) interpretIdentStatement(stmt *IdentStatement) pyObject {
 
 func (s *scope) interpretList(expr *List) pyList {
 	if expr.Comprehension == nil {
-		return pyList(s.evaluateExpressions(expr.Values))
+		return s.evaluateExpressions(expr.Values)
 	}
 	cs := s.NewScope(s.filename, s.mode)
 	l := s.iterate(expr.Comprehension.Expr)
-	ret := make(pyList, 0, len(l))
+	var ret pyList = heap.MakeSlice[pyObject](s.heap, 0, len(l))
 	cs.evaluateComprehension(l, expr.Comprehension, func(li pyObject) {
 		if len(expr.Values) == 1 {
 			heap.Append[pyObject](s.heap, ret, cs.interpretExpression(expr.Values[0]))
@@ -911,7 +911,7 @@ func (s *scope) iterate(expr *Expression) pyList {
 
 // evaluateExpressions runs a series of Python expressions in this scope and creates a series of concrete objects from them.
 func (s *scope) evaluateExpressions(exprs []*Expression) []pyObject {
-	l := make(pyList, len(exprs))
+	l := heap.MakeSlice[pyObject](s.heap, len(exprs), len(exprs))
 	for i, v := range exprs {
 		l[i] = s.interpretExpression(v)
 	}

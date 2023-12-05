@@ -1382,7 +1382,7 @@ func breakpoint(s *scope, args []pyObject) pyObject {
 		prompt := promptui.Prompt{
 			Label: "plz",
 			Validate: func(input string) error {
-				_, err := s.interpreter.parser.ParseData([]byte(input), "<stdin>")
+				_, err := s.interpreter.parser.ParseData(s.heap, []byte(input), "<stdin>")
 				return err
 			},
 		}
@@ -1394,7 +1394,7 @@ func breakpoint(s *scope, args []pyObject) pyObject {
 			}
 		} else if input == "exit" {
 			break
-		} else if stmts, err := s.interpreter.parser.ParseData([]byte(input), "<stdin>"); err != nil {
+		} else if stmts, err := s.interpreter.parser.ParseData(s.heap, []byte(input), "<stdin>"); err != nil {
 			log.Error("Syntax error: %s", err)
 		} else if ret, err := interpretStatements(stmts); err != nil {
 			log.Error("%s", err)

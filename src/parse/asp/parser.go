@@ -139,9 +139,9 @@ func (p *Parser) parse(filename string) ([]*Statement, error) {
 
 // ParseData reads the given byteslice and parses it into a set of statements.
 // The 'filename' argument is only used in case of errors so doesn't necessarily have to correspond to a real file.
-func (p *Parser) ParseData(data []byte, filename string) ([]*Statement, error) {
+func (p *Parser) ParseData(a *arena.Arena, data []byte, filename string) ([]*Statement, error) {
 	r := &namedReader{r: bytes.NewReader(data), name: filename}
-	return p.parseAndHandleErrors(r, nil)
+	return p.parseAndHandleErrors(r, a)
 }
 
 // parseAndHandleErrors handles errors nicely if the given input fails to parse.

@@ -63,7 +63,7 @@ func AllBuiltinFunctions(state *core.BuildState) map[string]*asp.Statement {
 			if err != nil {
 				log.Fatalf("Failed to read an asset %s", filename)
 			}
-			if stmts, err := p.ParseData(assetSrc, filename); err == nil {
+			if stmts, err := p.ParseData(nil, assetSrc, filename); err == nil {
 				addAllFunctions(m, stmts, true)
 			}
 		}

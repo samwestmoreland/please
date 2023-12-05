@@ -4,6 +4,13 @@ import (
 	"arena"
 )
 
+func MakeSlice[T any](a *arena.Arena, len, cap int) []T {
+	if a == nil {
+		return make([]T, len, cap)
+	}
+	return arena.MakeSlice[T](a, len, cap)
+}
+
 func Append[T any](a *arena.Arena, slice []T, values ...T) []T {
 	targetSize := len(slice) + len(values)
 	if targetSize <= cap(slice) {

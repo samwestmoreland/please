@@ -101,7 +101,7 @@ func (h *Handler) parse(d *doc, content string) {
 	}()
 	// Ignore errors, it will often fail if the file is partially complete, so
 	// just take whatever we've got.
-	stmts, _ := h.parser.ParseData([]byte(content), d.Filename)
+	stmts, _ := h.parser.ParseData(nil, []byte(content), d.Filename)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	d.AST = stmts
@@ -116,7 +116,7 @@ func (h *Handler) parseIfNeeded(d *doc) []*asp.Statement {
 	if len(ast) != 0 {
 		return ast
 	}
-	stmts, _ := h.parser.ParseData([]byte(d.Text()), d.Filename)
+	stmts, _ := h.parser.ParseData(nil, []byte(d.Text()), d.Filename)
 	d.Mutex.Lock()
 	defer d.Mutex.Unlock()
 	d.AST = stmts

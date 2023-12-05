@@ -3,9 +3,11 @@ package asp
 import (
 	"arena"
 	"bytes"
+	"fmt"
 	"github.com/thought-machine/please/rules"
 	"github.com/thought-machine/please/src/core"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -90,7 +92,7 @@ func BenchmarkParseWithArena(b *testing.B) {
 
 func parseInParallel(threads, repeats int, useArena bool) {
 	wg := new(sync.WaitGroup)
-	wg.Add(threads * repeats)
+	wg.Add(threads)
 	for j := 0; j < threads; j++ {
 		go func() {
 			for k := 0; k < repeats; k++ {
@@ -103,8 +105,8 @@ func parseInParallel(threads, repeats int, useArena bool) {
 				a := arena.NewArena()
 				parseFileInput(r, a)
 				a.Free()
-				wg.Done()
 			}
+			wg.Done()
 		}()
 	}
 	wg.Wait()
@@ -112,21 +114,24 @@ func parseInParallel(threads, repeats int, useArena bool) {
 
 func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	b.ReportAllocs()
+	p := newParserWithGo()
+	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		parseAndInterpret(true)
-	}
+	fmt.Printf("%v\n", b.N)
+
+	parseAndInterpretInParallel(10, b.N, true, p)
 }
 
 func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
 	b.ReportAllocs()
+	p := newParserWithGo()
+	b.ResetTimer()
+	fmt.Printf("%v\n", b.N)
 
-	for i := 0; i < b.N; i++ {
-		parseAndInterpret(false)
-	}
+	parseAndInterpretInParallel(10, b.N, false, p)
 }
 
-func parseAndInterpret(withArena bool) {
+func newParserWithGo() *Parser {
 	p := NewParser(core.NewDefaultBuildState())
 	bs, err := os.ReadFile("go.build_defs")
 	if err != nil {
@@ -172,22 +177,41 @@ func parseAndInterpret(withArena bool) {
 	if err := p.LoadBuiltins("go.build_defs", bs); err != nil {
 		panic(err)
 	}
+	return p
+}
 
-	var heap *arena.Arena
-	if withArena {
-		heap = arena.NewArena()
+func parseAndInterpretInParallel(threads, repeats int, withArena bool, p *Parser) {
+	wg := new(sync.WaitGroup)
+	wg.Add(threads)
+	for thread := 0; thread < threads; thread++ {
+		go func(thread int) {
+			for repeat := 0; repeat < repeats; repeat++ {
+				pkg := fmt.Sprintf("src/asp/parse_%v_%v", thread, repeat)
+				var heap *arena.Arena
+				if withArena {
+					heap = arena.NewArena()
+				}
+
+				s := p.interpreter.scope.newScope(core.NewPackage(pkg), heap, core.ParseModeNormal, filepath.Join(pkg, "BUILD"), 10)
+
+				// This call to ParseData currently doesn't use the arena
+				stmts, err := s.interpreter.parser.ParseData(heap, []byte(code), "BUILD")
+				if err != nil {
+					panic(err)
+				}
+
+				s.interpretStatements(stmts)
+
+				// A quick assert to see if we have the target we expect
+				t := s.state.Graph.TargetOrDie(core.NewBuildLabel(pkg, "asp"))
+				_ = t
+				if withArena {
+					heap.Free()
+				}
+			}
+			wg.Done()
+		}(thread)
 	}
 
-	s := p.interpreter.scope.newScope(core.NewPackage("src/parse/asp"), heap, core.ParseModeNormal, "BUILD", 10)
-
-	// This call to ParseData currently doesn't use the arena
-	stmts, err := s.interpreter.parser.ParseData([]byte(code), "BUILD")
-	if err != nil {
-		panic(err)
-	}
-
-	s.interpretStatements(stmts)
-
-	// A quick assert to see if we have the target we expect
-	s.state.Graph.TargetOrDie(core.NewBuildLabel("src/parse/asp", "asp"))
+	wg.Wait()
 }

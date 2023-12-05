@@ -252,7 +252,7 @@ func getPluginBuildDefs(subrepo *core.Subrepo) map[string]*asp.Statement {
 				log.Warningf("Failed to read %s: %s", path, err)
 			}
 
-			stmts, err := p.ParseData(bs, path)
+			stmts, err := p.ParseData(nil, bs, path)
 			if err != nil {
 				log.Warningf("Failed to parse %s: %s", path, err)
 			}
