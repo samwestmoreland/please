@@ -1,13 +1,13 @@
 package asp
 
 import (
+	"arena"
 	"bytes"
 	"github.com/thought-machine/please/rules"
 	"github.com/thought-machine/please/src/core"
 	"os"
 	"sync"
 	"testing"
-	"arena"
 )
 
 var code = `
@@ -90,10 +90,10 @@ func BenchmarkParseWithArena(b *testing.B) {
 
 func parseInParallel(threads, repeats int, useArena bool) {
 	wg := new(sync.WaitGroup)
-	wg.Add(threads*repeats)
+	wg.Add(threads * repeats)
 	for j := 0; j < threads; j++ {
 		go func() {
-			for k :=0 ; k < repeats; k++ {
+			for k := 0; k < repeats; k++ {
 				r := bytes.NewReader([]byte(code))
 				if !useArena {
 					parseFileInput(r, nil)
@@ -110,65 +110,84 @@ func parseInParallel(threads, repeats int, useArena bool) {
 	wg.Wait()
 }
 
-func BenchmarkParseAndInterpret(b *testing.B) {
+func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		p := NewParser(core.NewDefaultBuildState())
-		bs, err := os.ReadFile("go.build_defs")
-		if err != nil {
-			panic(err)
-		}
-
-		// Dummy out the plugin config so the build defs can be interpreted
-		goPluginConf := pyDict{
-			"PKG_INFO": pyBool(true),
-			"IMPORT_PATH": None,
-			"LEGACY_IMPORTS": pyBool(false),
-			"RACE": pyBool(false),
-			"DEFAULT_STATIC": pyBool(false),
-			"BUILDMODE": None,
-			"STDLIB": None,
-			"C_FLAGS": None,
-			"LD_FLAGS": None,
-			"CGO_ENABLED": None,
-			"PLEASE_GO_TOOL": pyString("please_go"),
-			"GO_TOOL": pyString("go"),
-			"CC_TOOL": pyString("cc"),
-			"TEST_ROOT_COMPAT": pyBool(false),
-		}
-
-		p.interpreter.scope.config.base.dict["GO"] = goPluginConf
-
-		assets, err := rules.AllAssets()
-		if err != nil {
-			panic(err)
-		}
-
-		for _, asset := range assets {
-			bs, err := rules.ReadAsset(asset)
-			if err != nil {
-				panic(err)
-			}
-
-			if err := p.LoadBuiltins(asset, bs); err != nil {
-				panic(err)
-			}
-		}
-
-
-		if err := p.LoadBuiltins("go.build_defs", bs); err != nil {
-			panic(err)
-		}
-		s := p.interpreter.scope.newScope(core.NewPackage("src/parse/asp"), core.ParseModeNormal, "BUILD", 10)
-		stmts, err := s.interpreter.parser.ParseData([]byte(code), "BUILD")
-		if err != nil {
-			panic(err)
-		}
-
-		s.interpretStatements(stmts)
-
-		// A quick assert to see if we have the target we expect
-		s.state.Graph.TargetOrDie(core.NewBuildLabel("src/parse/asp", "asp"))
+		parseAndInterpret(true)
 	}
+}
+
+func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		parseAndInterpret(false)
+	}
+}
+
+func parseAndInterpret(withArena bool) {
+	p := NewParser(core.NewDefaultBuildState())
+	bs, err := os.ReadFile("go.build_defs")
+	if err != nil {
+		panic(err)
+	}
+
+	// Dummy out the plugin config so the build defs can be interpreted
+	goPluginConf := pyDict{
+		"PKG_INFO":         pyBool(true),
+		"IMPORT_PATH":      None,
+		"LEGACY_IMPORTS":   pyBool(false),
+		"RACE":             pyBool(false),
+		"DEFAULT_STATIC":   pyBool(false),
+		"BUILDMODE":        None,
+		"STDLIB":           None,
+		"C_FLAGS":          None,
+		"LD_FLAGS":         None,
+		"CGO_ENABLED":      None,
+		"PLEASE_GO_TOOL":   pyString("please_go"),
+		"GO_TOOL":          pyString("go"),
+		"CC_TOOL":          pyString("cc"),
+		"TEST_ROOT_COMPAT": pyBool(false),
+	}
+
+	p.interpreter.scope.config.base.dict["GO"] = goPluginConf
+
+	assets, err := rules.AllAssets()
+	if err != nil {
+		panic(err)
+	}
+
+	for _, asset := range assets {
+		bs, err := rules.ReadAsset(asset)
+		if err != nil {
+			panic(err)
+		}
+
+		if err := p.LoadBuiltins(asset, bs); err != nil {
+			panic(err)
+		}
+	}
+
+	if err := p.LoadBuiltins("go.build_defs", bs); err != nil {
+		panic(err)
+	}
+
+	var heap *arena.Arena
+	if withArena {
+		heap = arena.NewArena()
+	}
+
+	s := p.interpreter.scope.newScope(core.NewPackage("src/parse/asp"), heap, core.ParseModeNormal, "BUILD", 10)
+
+	// This call to ParseData currently doesn't use the arena
+	stmts, err := s.interpreter.parser.ParseData([]byte(code), "BUILD")
+	if err != nil {
+		panic(err)
+	}
+
+	s.interpretStatements(stmts)
+
+	// A quick assert to see if we have the target we expect
+	s.state.Graph.TargetOrDie(core.NewBuildLabel("src/parse/asp", "asp"))
 }
