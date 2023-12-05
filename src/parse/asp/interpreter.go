@@ -37,7 +37,6 @@ func newInterpreter(state *core.BuildState, p *Parser) *interpreter {
 	s := &scope{
 		state:  state,
 		locals: map[string]pyObject{},
-		heap:   arena.NewArena(),
 	}
 	// If we're creating an interpreter for a subrepo, we should share the subinclude cache.
 	var subincludes *cmap.Map[string, pyDict]
