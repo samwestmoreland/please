@@ -155,6 +155,9 @@ func (i *interpreter) preloadSubinclude(s *scope, label core.BuildLabel) (err er
 // The first return value is for testing only.
 func (i *interpreter) interpretAll(pkg *core.Package, forLabel, dependent *core.BuildLabel, mode core.ParseMode, statements []*Statement) (*scope, error) {
 	s := i.scope.NewPackagedScope(pkg, mode, 1)
+	s.heap = arena.NewArena()
+	defer s.heap.Free()
+
 	s.config = i.getConfig(s.state).Copy()
 
 	// Config needs a little separate tweaking.
