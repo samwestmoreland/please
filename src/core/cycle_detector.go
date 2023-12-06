@@ -16,7 +16,7 @@ func (c *cycleDetector) Check() *errCycle {
 	if c.stopped {
 		return nil
 	}
-	log.Debug("Running cycle detection...")
+	//log.Debug("Running cycle detection...")
 	complete := map[*BuildTarget]struct{}{}
 	partial := map[*BuildTarget]struct{}{}
 
@@ -55,12 +55,12 @@ func (c *cycleDetector) Check() *errCycle {
 		}
 		if _, present := complete[target]; !present {
 			if cycle, _ := visit(target); cycle != nil {
-				log.Debug("Cycle detection complete, cycle found: %s", cycle)
+				//log.Debug("Cycle detection complete, cycle found: %s", cycle)
 				return &errCycle{Cycle: cycle}
 			}
 		}
 	}
-	log.Debug("Cycle detection complete, no cycles found")
+	//log.Debug("Cycle detection complete, no cycles found")
 	return nil
 }
 

@@ -7,6 +7,7 @@ package heap
 import (
 	"arena"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thought-machine/please/src/cli/logging"
@@ -41,6 +42,12 @@ type Pool struct {
 	// Ideally this would be based on bytes allocated, but we don't have access to those stats.
 	UsagesBeforeFree  int
 	IdleTimeUntilFree time.Duration
+	Stats Stats
+}
+
+type Stats struct {
+	Frees atomic.Uint64
+	NewArena atomic.Uint64
 }
 
 // NewPool creates a new dynamically sized pool of heaps that can be used to allocated memory during parsing and
@@ -94,6 +101,7 @@ func (p *Pool) Get() *Heap {
 	heap.mux.Lock()
 	if heap.Arena == nil {
 		heap.Arena = arena.NewArena()
+		p.Stats.NewArena.Add(1)
 	}
 	return heap
 }
@@ -102,6 +110,7 @@ func (p *Pool) Return(heap *Heap) {
 	heap.usages++
 	if heap.usages > p.UsagesBeforeFree {
 		heap.free()
+		p.Stats.Frees.Add(1)
 	}
 	heap.mux.Unlock()
 	p.available <- heap

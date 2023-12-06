@@ -77,7 +77,6 @@ go_test(
 `
 
 func BenchmarkParse(b *testing.B) {
-	arena.NewArena().Free()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
@@ -86,7 +85,6 @@ func BenchmarkParse(b *testing.B) {
 }
 
 func BenchmarkParseWithArena(b *testing.B) {
-	arena.NewArena().Free()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
@@ -119,19 +117,17 @@ func parseInParallel(threads, repeats int, useArena bool) {
 func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	b.ReportAllocs()
 	p := newParserWithGo()
-	arena.NewArena().Free()
 	b.ResetTimer()
 
-	parseAndInterpretInParallel(10, b.N*1000, true, p)
+	parseAndInterpretInParallel(b, 10, b.N*10, true, p)
 }
 
 func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
 	b.ReportAllocs()
 	p := newParserWithGo()
-	arena.NewArena().Free()
 	b.ResetTimer()
 
-	parseAndInterpretInParallel(10, b.N*1000, false, p)
+	parseAndInterpretInParallel(b,10, b.N*10, false, p)
 }
 
 func newParserWithGo() *Parser {
@@ -183,10 +179,10 @@ func newParserWithGo() *Parser {
 	return p
 }
 
-func parseAndInterpretInParallel(threads, repeats int, withArena bool, p *Parser) {
+func parseAndInterpretInParallel(b *testing.B, threads, repeats int, withArena bool, p *Parser) {
 	wg := new(sync.WaitGroup)
 	wg.Add(threads)
-	pool := heap.NewPool(threads, -1, time.Second)
+	pool := heap.NewPool(threads, 250, time.Second)
 	for thread := 0; thread < threads; thread++ {
 		go func(thread int) {
 			for repeat := 0; repeat < repeats; repeat++ {
@@ -220,4 +216,7 @@ func parseAndInterpretInParallel(threads, repeats int, withArena bool, p *Parser
 	}
 
 	wg.Wait()
+
+	b.ReportMetric(float64(pool.Stats.Frees.Load()), "Arena-frees")
+	b.ReportMetric(float64(pool.Stats.NewArena.Load()), "Arena-creates")
 }
