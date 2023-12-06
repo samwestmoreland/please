@@ -75,6 +75,7 @@ go_test(
 `
 
 func BenchmarkParse(b *testing.B) {
+	arena.NewArena().Free()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
@@ -83,6 +84,7 @@ func BenchmarkParse(b *testing.B) {
 }
 
 func BenchmarkParseWithArena(b *testing.B) {
+	arena.NewArena().Free()
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
@@ -114,6 +116,7 @@ func parseInParallel(threads, repeats int, useArena bool) {
 func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	b.ReportAllocs()
 	p := newParserWithGo()
+	arena.NewArena().Free()
 	b.ResetTimer()
 
 	parseAndInterpretInParallel(10, b.N, true, p)
@@ -122,6 +125,7 @@ func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
 	b.ReportAllocs()
 	p := newParserWithGo()
+	arena.NewArena().Free()
 	b.ResetTimer()
 
 	parseAndInterpretInParallel(10, b.N, false, p)
