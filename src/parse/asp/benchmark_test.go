@@ -9,6 +9,8 @@ import (
 	"github.com/thought-machine/please/src/parse/asp/heap"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -182,7 +184,7 @@ func newParserWithGo() *Parser {
 func parseAndInterpretInParallel(b *testing.B, threads, repeats int, withArena bool, p *Parser) {
 	wg := new(sync.WaitGroup)
 	wg.Add(threads)
-	pool := heap.NewPool(threads, 250, time.Second)
+	pool := heap.NewPool(threads, 10, time.Second)
 	for thread := 0; thread < threads; thread++ {
 		go func(thread int) {
 			for repeat := 0; repeat < repeats; repeat++ {
@@ -217,6 +219,15 @@ func parseAndInterpretInParallel(b *testing.B, threads, repeats int, withArena b
 
 	wg.Wait()
 
+
+	gcStats := debug.GCStats{}
+	memStats := runtime.MemStats{}
+	debug.ReadGCStats(&gcStats)
+	runtime.ReadMemStats(&memStats)
+
 	b.ReportMetric(float64(pool.Stats.Frees.Load()), "Arena-frees")
 	b.ReportMetric(float64(pool.Stats.NewArena.Load()), "Arena-creates")
+	b.ReportMetric(float64(memStats.Sys)/1024.0/1024.0/1024.0, "In-use")
+	b.ReportMetric(float64(gcStats.NumGC), "GCs")
+
 }
