@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"github.com/thought-machine/please/rules"
 	"github.com/thought-machine/please/src/core"
+	"github.com/thought-machine/please/src/parse/asp/heap"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 var code = `
@@ -95,6 +97,7 @@ func BenchmarkParseWithArena(b *testing.B) {
 func parseInParallel(threads, repeats int, useArena bool) {
 	wg := new(sync.WaitGroup)
 	wg.Add(threads)
+	pool := heap.NewPool(threads, -1, time.Second)
 	for j := 0; j < threads; j++ {
 		go func() {
 			for k := 0; k < repeats; k++ {
@@ -103,9 +106,9 @@ func parseInParallel(threads, repeats int, useArena bool) {
 					parseFileInput(r, nil)
 					continue
 				}
-				a := arena.NewArena()
-				parseFileInput(r, a)
-				a.Free()
+				heap := pool.Get()
+				parseFileInput(r, heap.Arena)
+				pool.Return(heap)
 			}
 			wg.Done()
 		}()
@@ -119,7 +122,7 @@ func BenchmarkParseAndInterpretWithArena(b *testing.B) {
 	arena.NewArena().Free()
 	b.ResetTimer()
 
-	parseAndInterpretInParallel(10, b.N, true, p)
+	parseAndInterpretInParallel(10, b.N*1000, true, p)
 }
 
 func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
@@ -128,7 +131,7 @@ func BenchmarkParseAndInterpretWithoutArena(b *testing.B) {
 	arena.NewArena().Free()
 	b.ResetTimer()
 
-	parseAndInterpretInParallel(10, b.N, false, p)
+	parseAndInterpretInParallel(10, b.N*1000, false, p)
 }
 
 func newParserWithGo() *Parser {
@@ -183,19 +186,22 @@ func newParserWithGo() *Parser {
 func parseAndInterpretInParallel(threads, repeats int, withArena bool, p *Parser) {
 	wg := new(sync.WaitGroup)
 	wg.Add(threads)
+	pool := heap.NewPool(threads, -1, time.Second)
 	for thread := 0; thread < threads; thread++ {
 		go func(thread int) {
 			for repeat := 0; repeat < repeats; repeat++ {
 				pkg := fmt.Sprintf("src/asp/parse_%v_%v", thread, repeat)
-				var heap *arena.Arena
+				var heap *heap.Heap
+				var arena *arena.Arena
 				if withArena {
-					heap = arena.NewArena()
+					heap = pool.Get()
+					arena = heap.Arena
 				}
 
-				s := p.interpreter.scope.newScope(core.NewPackage(pkg), heap, core.ParseModeNormal, filepath.Join(pkg, "BUILD"), 10)
+				s := p.interpreter.scope.newScope(core.NewPackage(pkg), arena, core.ParseModeNormal, filepath.Join(pkg, "BUILD"), 10)
 
 				// This call to ParseData currently doesn't use the arena
-				stmts, err := s.interpreter.parser.ParseData(heap, []byte(code), "BUILD")
+				stmts, err := s.interpreter.parser.ParseData(arena, []byte(code), "BUILD")
 				if err != nil {
 					panic(err)
 				}
@@ -206,7 +212,7 @@ func parseAndInterpretInParallel(threads, repeats int, withArena bool, p *Parser
 				t := s.state.Graph.TargetOrDie(core.NewBuildLabel(pkg, "asp"))
 				_ = t
 				if withArena {
-					heap.Free()
+					pool.Return(heap)
 				}
 			}
 			wg.Done()
